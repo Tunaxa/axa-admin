@@ -60,6 +60,8 @@ model User {
   organizationId String   @db.Uuid
   email          String
   name           String
+  /// bcrypt hash. Never selected into a response — see `AuthService`.
+  passwordHash   String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
