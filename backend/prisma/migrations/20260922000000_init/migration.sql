@@ -1,0 +1,6 @@
+-- Baseline migration.
+--
+-- Intentionally empty: this migration exists to initialise Prisma's migration
+-- history (and the `_prisma_migrations` table) so that later migrations have a
+-- baseline to build on. The first tables are created by the migration that
+-- introduces the multi-tenant schema.

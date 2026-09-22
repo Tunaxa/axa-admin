@@ -1,0 +1,15 @@
+// AXA Admin data model.
+//
+// Models are added by the tasks that own them; this file currently establishes
+// the datasource, the generator and the migration baseline.
+//
+// Note: as of Prisma 7 the connection URL lives in `prisma.config.ts`, not
+// here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

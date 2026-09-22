@@ -37,8 +37,9 @@ turning incoming account requests into active, billed accounts.
 
 ```
 axa-admin/
-├── frontend/     # Next.js application
-└── backend/      # NestJS application
+├── frontend/            # Next.js application
+├── backend/             # NestJS application
+└── docker-compose.yml   # Local PostgreSQL
 ```
 
 The frontend and backend share a repository but are two independent projects:
