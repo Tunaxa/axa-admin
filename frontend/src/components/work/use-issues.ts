@@ -2,36 +2,40 @@
 
 import * as React from 'react';
 
-import { fetchIssues, updateIssueStatus } from './issues-api';
-import type { Issue, IssueStatus } from './types';
+import { fetchIssues, fetchTeamMembers, updateIssue, type IssuePatch } from './issues-api';
+import type { Issue, IssueStatus, TeamMember } from './types';
 
 export type LoadState = 'loading' | 'ready' | 'failed';
 
 export interface UseIssues {
   issues: Issue[];
+  members: TeamMember[];
   state: LoadState;
   error: string | null;
   moveIssue: (issueId: string, status: IssueStatus) => Promise<void>;
+  patchIssue: (issueId: string, patch: IssuePatch) => Promise<void>;
 }
 
 /**
- * Loads the issues once and exposes a status change.
+ * Loads the issues and the roster once, and applies changes to both.
  *
- * Shared by the board and the list so both render the same rows from the same
- * request; switching views does not refetch.
+ * Shared by the board, the list and the detail panel so all three render the
+ * same rows from the same request.
  */
 export function useIssues(): UseIssues {
   const [issues, setIssues] = React.useState<Issue[]>([]);
+  const [members, setMembers] = React.useState<TeamMember[]>([]);
   const [state, setState] = React.useState<LoadState>('loading');
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
 
-    fetchIssues()
-      .then((loaded) => {
+    Promise.all([fetchIssues(), fetchTeamMembers()])
+      .then(([loadedIssues, loadedMembers]) => {
         if (cancelled) return;
-        setIssues(loaded);
+        setIssues(loadedIssues);
+        setMembers(loadedMembers);
         setState('ready');
       })
       .catch((cause: unknown) => {
@@ -45,40 +49,51 @@ export function useIssues(): UseIssues {
     };
   }, []);
 
-  const moveIssue = React.useCallback(
-    async (issueId: string, status: IssueStatus) => {
-      // Read the previous status from state directly. Capturing it inside a
-      // `setIssues` updater does not work: the updater runs during render, not
-      // synchronously here, so the value would still be undefined below.
-      const issue = issues.find((candidate) => candidate.id === issueId);
+  /**
+   * Applies a change optimistically and rolls the whole issue back if the
+   * request is refused, so the board never shows a state the server rejected.
+   */
+  const patchIssue = React.useCallback(
+    async (issueId: string, patch: IssuePatch) => {
+      // Read the issue from state directly. Capturing it inside a `setIssues`
+      // updater does not work: the updater runs during render, not here.
+      const previous = issues.find((candidate) => candidate.id === issueId);
 
-      if (!issue || issue.status === status) {
+      if (!previous) {
         return;
       }
 
-      const previousStatus = issue.status;
+      const unchanged = (Object.keys(patch) as (keyof IssuePatch)[]).every(
+        (key) => patch[key] === previous[key],
+      );
+
+      if (unchanged) {
+        return;
+      }
 
       setError(null);
       setIssues((current) =>
         current.map((candidate) =>
-          candidate.id === issueId ? { ...candidate, status } : candidate,
+          candidate.id === issueId ? { ...candidate, ...patch } : candidate,
         ),
       );
 
       try {
-        await updateIssueStatus(issueId, status);
+        await updateIssue(issueId, patch);
       } catch (cause: unknown) {
-        // Put the card back where it came from; the server is the source of truth.
         setIssues((current) =>
-          current.map((candidate) =>
-            candidate.id === issueId ? { ...candidate, status: previousStatus } : candidate,
-          ),
+          current.map((candidate) => (candidate.id === issueId ? previous : candidate)),
         );
-        setError(cause instanceof Error ? cause.message : 'Could not move the issue');
+        setError(cause instanceof Error ? cause.message : 'Could not update the issue');
       }
     },
     [issues],
   );
 
-  return { issues, state, error, moveIssue };
+  const moveIssue = React.useCallback(
+    (issueId: string, status: IssueStatus) => patchIssue(issueId, { status }),
+    [patchIssue],
+  );
+
+  return { issues, members, state, error, moveIssue, patchIssue };
 }

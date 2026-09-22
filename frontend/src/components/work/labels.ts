@@ -32,3 +32,15 @@ export const APP_LABELS: Record<NonNullable<Issue['app']>, string> = {
   axapass: 'axapass',
   website: 'website',
 };
+
+/** Display name for an issue's assignee, or `null` when unassigned. */
+export function assigneeNameFor(
+  assigneeId: string | null,
+  members: { id: string; name: string }[],
+): string | null {
+  if (!assigneeId) {
+    return null;
+  }
+
+  return members.find((member) => member.id === assigneeId)?.name ?? null;
+}

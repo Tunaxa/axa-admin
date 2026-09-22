@@ -29,8 +29,16 @@ export type AppKey = (typeof APP_KEYS)[number];
 export interface Issue {
   id: string;
   title: string;
+  description: string | null;
   status: IssueStatus;
   priority: IssuePriority;
   app: AppKey | null;
-  assigneeName: string | null;
+  assigneeId: string | null;
+}
+
+/** A person who can be assigned an issue. */
+export interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
 }
