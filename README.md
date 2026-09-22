@@ -33,6 +33,19 @@ turning incoming account requests into active, billed accounts.
 - **Data** — PostgreSQL (primary), Redis (cache and real-time)
 - **Infrastructure** — Docker, GitHub Actions
 
+## Repository Structure
+
+```
+axa-admin/
+├── frontend/     # Next.js application
+└── backend/      # NestJS application
+```
+
+The frontend and backend share a repository but are two independent projects:
+each owns its dependencies, lockfile and tooling, and neither is installed or
+built through the other. They communicate over HTTP and WebSockets, so either
+can be deployed on its own.
+
 ## Git Workflow
 
 - `main` is the production branch and is never developed on directly.
@@ -43,4 +56,7 @@ turning incoming account requests into active, billed accounts.
 
 ## Status
 
-Early development. See the phased build plan in the project documentation.
+Early development. The repository structure is in place;
+`frontend/` and `backend/` are prepared directories awaiting their
+framework scaffolds. See the phased build plan in the project
+documentation.
