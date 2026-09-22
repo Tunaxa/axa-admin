@@ -79,6 +79,31 @@ Three models form the tenancy base:
 | `Workspace` | `workspaces` | A container inside a tenant |
 | `User` | `users` | A person who can sign in |
 
+Four more carry the work itself:
+
+| Model | Table | Role |
+| --- | --- | --- |
+| `Project` | `projects` | A body of work grouping issues |
+| `Issue` | `issues` | A unit of work |
+| `Label` | `labels` | A tag applied to issues |
+| `IssueLabel` | `issue_labels` | Join between issues and labels |
+
+`Issue` carries `status`, `priority`, `assigneeId`, its labels, and `app` — the
+AXA application it delivers against. Enums are PostgreSQL types rather than
+strings, so an unknown value is rejected by the database:
+
+| Enum | Type | Values |
+| --- | --- | --- |
+| `ProjectStatus` | `project_status` | `backlog`, `planned`, `in_progress`, `paused`, `completed`, `cancelled` |
+| `IssueStatus` | `issue_status` | `backlog`, `todo`, `in_progress`, `in_review`, `done`, `cancelled` |
+| `IssuePriority` | `issue_priority` | `none`, `low`, `medium`, `high`, `urgent` |
+| `AppKey` | `app_key` | `axa_admin`, `axacrm`, `axapass`, `website` |
+
+Deletes are chosen per relation rather than uniformly. Removing a tenant
+cascades to everything it owns, but removing an **assignee** or a **project**
+leaves the issue in place with the reference set to null — losing work because
+someone left the team or a project was closed would be the wrong default.
+
 `Workspace` and `User` both carry `organizationId` with an index and a
 cascading foreign key. Uniqueness is scoped to the tenant rather than global —
 `(organizationId, slug)` for workspaces and `(organizationId, email)` for users
@@ -101,6 +126,7 @@ permissions work, not to the base schema.
 | `20260922000000_init` | Empty baseline that initialises Prisma's migration history and the `_prisma_migrations` table |
 | `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
+| `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
 
 ## Authentication
 
@@ -188,6 +214,42 @@ selected — and is ordered by name.
 It exists because the issue detail panel needs somewhere to read assignable
 people from. The wider roster work (roles, per-app ownership, capacity, daily
 reports) is still ahead.
+## Issues API
+
+All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
+`org` claim, never to an organization id taken from the request. A caller cannot
+reach another tenant's issues by guessing ids.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/issues` | Create an issue |
+| `GET` | `/issues` | List issues, optionally filtered |
+| `PATCH` | `/issues/:id` | Update the fields supplied |
+| `DELETE` | `/issues/:id` | Delete an issue (`204`) |
+
+### Filters
+
+`GET /issues` accepts `assigneeId`, `app` and `priority`. They combine with
+AND, and an unknown enum value is rejected with `400`.
+
+```
+GET /issues?app=axacrm&priority=high
+```
+
+Results are ordered by `createdAt` descending.
+
+### Behaviour worth knowing
+
+- An issue belonging to another tenant is reported as **404, not 403**, so the
+  response never confirms that an id exists elsewhere.
+- `workspaceId`, `assigneeId` and `projectId` are checked against the caller's
+  tenant on write and rejected with `400` when they belong to another one. The
+  project is additionally checked against the issue's workspace.
+- `workspaceId` cannot be changed through `PATCH`. Moving an issue between
+  workspaces is a different operation, with its own rules about whether the
+  project and assignee follow.
+- Omitted fields keep their value; `status` and `priority` fall back to the
+  schema defaults (`backlog`, `none`) on create.
 
 ## Structure
 
@@ -212,10 +274,10 @@ backend/
 └── test/                   # End-to-end tests
 ```
 
-Each feature module is currently an empty `@Module({})` registered in
-`AppModule`. Controllers, services and Prisma access are added by the feature
-task for each module, so the folder structure is in place without pre-empting
-decisions those tasks need to make.
+`work/` now holds the Issues API. The remaining feature modules are still empty
+`@Module({})`s registered in `AppModule`; controllers, services and Prisma
+access are added by the feature task for each one, so the folder structure is in
+place without pre-empting decisions those tasks need to make.
 
 ### Planned additions
 
