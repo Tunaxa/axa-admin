@@ -1,5 +1,5 @@
-import { IssueBoard } from '@/components/work/issue-board';
+import { IssueViews } from '@/components/work/issue-views';
 
 export default function HomePage() {
-  return <IssueBoard />;
+  return <IssueViews />;
 }
