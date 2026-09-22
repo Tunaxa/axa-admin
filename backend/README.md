@@ -166,6 +166,7 @@ belongs to.
 | --- | --- |
 | `JWT_SECRET` | Signing secret. Required — the app refuses to start without it. |
 | `JWT_EXPIRES_IN` | Token lifetime, default `15m` |
+| `CORS_ORIGINS` | Comma-separated browser origins allowed to call the API, default `http://localhost:3000` |
 
 Generate a secret per environment:
 
@@ -186,6 +187,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 - Requests are validated by a global `ValidationPipe` with `whitelist` and
   `forbidNonWhitelisted`, so unknown properties are rejected rather than
   silently dropped.
+- CORS lists allowed origins from `CORS_ORIGINS` rather than reflecting the
+  request origin, so a misconfigured deployment fails closed instead of
+  accepting every site.
 
 ## Issues API
 

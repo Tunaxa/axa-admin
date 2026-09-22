@@ -112,19 +112,33 @@ which is separate work.
 
 | Component | File | Contents |
 | --- | --- | --- |
-| `IssueBoard` | `components/work/issue-board.tsx` | Columns, per-column counts, empty state |
+| `IssueBoard` | `components/work/issue-board.tsx` | Columns, counts, empty state, drag and drop |
 | `IssueCard` | `components/work/issue-card.tsx` | Title, priority, linked app, assignee |
 | `BOARD_COLUMNS` | `components/work/board-columns.ts` | Column order and labels |
 | `Issue` types | `components/work/types.ts` | Mirror of the backend's enums |
+| `issues-api.ts` | `components/work/issues-api.ts` | `fetchIssues`, `updateIssueStatus` |
+| `api.ts` | `lib/api.ts` | Base URL, bearer token, error mapping |
 
-**Read-only, and not connected to the API.** `components/work/placeholder-issues.ts`
-supplies the rows so the columns, cards and empty state can be reviewed. Wiring
-the board to `GET /issues` needs an API client and somewhere to hold the access
-token, neither of which exists in the frontend yet; that task deletes the
-placeholder file.
+### Data and drag and drop
 
-Dragging cards between columns is also not implemented — it changes issue
-status and needs an ordering column in the schema, which does not exist.
+The board loads from `GET /issues` and moves cards with `PATCH /issues/:id`.
+Dropping a card applies the new status optimistically and rolls it back if the
+request fails, so a card never sits in a column the server did not accept; the
+failure is shown in a banner above the board.
+
+Dragging uses the browser's native HTML5 drag events rather than a library. It
+only moves cards **between** columns — ordering **within** a column would need a
+persisted rank, and the schema has no such column.
+
+### Configuration and the access token
+
+`NEXT_PUBLIC_API_URL` points at the API (default `http://localhost:4000`); see
+`.env.example`.
+
+The API requires a bearer token and the frontend has **no sign-in screen yet**,
+so `lib/api.ts` reads the token from `localStorage` under
+`axa-admin.accessToken`. That is a placeholder, not a decision — see the note
+in that file. Until a sign-in flow exists, the board shows its error state.
 
 The board scrolls horizontally rather than wrapping, so the page itself never
 overflows sideways.

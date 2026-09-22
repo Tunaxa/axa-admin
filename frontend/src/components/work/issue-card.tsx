@@ -1,3 +1,5 @@
+'use client';
+
 import { cn } from 'cn';
 
 import { Badge } from '@/components/ui/badge';
@@ -28,9 +30,33 @@ const APP_LABELS: Record<NonNullable<Issue['app']>, string> = {
   website: 'website',
 };
 
-export function IssueCard({ issue }: { issue: Issue }) {
+export function IssueCard({
+  issue,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+}: {
+  issue: Issue;
+  isDragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+}) {
   return (
-    <article className="bg-card hover:border-ring rounded-md border p-3 shadow-xs transition-colors">
+    <article
+      draggable
+      onDragStart={(event) => {
+        // Firefox refuses to start a drag unless some data is set.
+        event.dataTransfer.setData('text/plain', issue.id);
+        event.dataTransfer.effectAllowed = 'move';
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+      aria-grabbed={isDragging}
+      className={cn(
+        'bg-card hover:border-ring cursor-grab rounded-md border p-3 shadow-xs transition-colors',
+        isDragging && 'opacity-50',
+      )}
+    >
       <h3 className="text-sm leading-snug font-medium">{issue.title}</h3>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
