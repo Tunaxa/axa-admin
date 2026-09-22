@@ -6,6 +6,17 @@ import { AppModule } from './app.module.js';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // The frontend is served from a different origin, so the browser will not
+  // let it call this API without an explicit allowance. Origins are listed
+  // rather than reflected, so a misconfigured deployment fails closed.
+  app.enableCors({
+    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+    credentials: true,
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       // Strip unknown properties and reject requests that send them, so a
