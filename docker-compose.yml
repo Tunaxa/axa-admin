@@ -1,0 +1,41 @@
+# Local development dependencies for AXA Admin.
+#
+# Application containers are added alongside these once the frontend and backend
+# are scaffolded; for now this provides the datastores the backend will target.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: axa-admin-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-axa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-axa}
+      POSTGRES_DB: ${POSTGRES_DB:-axa_admin}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-axa} -d ${POSTGRES_DB:-axa_admin}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: axa-admin-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  redis-data:
