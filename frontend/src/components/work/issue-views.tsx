@@ -10,7 +10,7 @@ import { IssueDetailPanel } from './issue-detail-panel';
 import { IssueList } from './issue-list';
 import { QuickCreateModal } from './quick-create-modal';
 import { useCreateShortcut } from './use-create-shortcut';
-import { useIssues } from './use-issues';
+import { useIssuesContext } from './issues-provider';
 import { ViewToggle, type IssueView } from './view-toggle';
 
 /**
@@ -21,10 +21,19 @@ import { ViewToggle, type IssueView } from './view-toggle';
  */
 export function IssueViews() {
   const [view, setView] = React.useState<IssueView>('board');
-  const [openIssueId, setOpenIssueId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
-  const { issues, members, workspaces, state, error, moveIssue, patchIssue, addIssue } =
-    useIssues();
+  const {
+    issues,
+    members,
+    workspaces,
+    state,
+    error,
+    moveIssue,
+    patchIssue,
+    addIssue,
+    openIssueId,
+    setOpenIssueId,
+  } = useIssuesContext();
 
   const openQuickCreate = React.useCallback(() => setCreating(true), []);
 

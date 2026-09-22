@@ -3,6 +3,7 @@ import { Geist } from 'next/font/google';
 import { cn } from 'cn';
 
 import { AppShell } from '@/components/layout/app-shell';
+import { IssuesProvider } from '@/components/work/issues-provider';
 
 import './globals.css';
 
@@ -17,7 +18,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={cn('font-sans', geist.variable)} suppressHydrationWarning>
       <body className="bg-background text-foreground antialiased">
-        <AppShell>{children}</AppShell>
+        <IssuesProvider>
+          <AppShell>{children}</AppShell>
+        </IssuesProvider>
       </body>
     </html>
   );
