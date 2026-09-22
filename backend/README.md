@@ -191,6 +191,16 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   request origin, so a misconfigured deployment fails closed instead of
   accepting every site.
 
+## Workspaces API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/workspaces` | List the workspaces in the caller's tenant |
+
+Guarded and tenant-scoped like everything else, returning `id`, `name` and
+`slug` ordered by name. It exists because creating an issue requires a
+`workspaceId` and the frontend had no way to learn one.
+
 ## Team API
 
 | Method | Path | Purpose |
@@ -252,7 +262,7 @@ backend/
 │   ├── app.service.ts
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
-│   ├── work/               # Issues, projects, cycles, board views
+│   ├── work/               # Workspaces API; issues, projects and cycles to follow
 │   ├── team/               # Roster listing; roles and reports to follow
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding

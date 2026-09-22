@@ -2,18 +2,28 @@
 
 import * as React from 'react';
 
-import { fetchIssues, fetchTeamMembers, updateIssue, type IssuePatch } from './issues-api';
-import type { Issue, IssueStatus, TeamMember } from './types';
+import {
+  createIssue,
+  fetchIssues,
+  fetchTeamMembers,
+  fetchWorkspaces,
+  updateIssue,
+  type CreateIssueInput,
+  type IssuePatch,
+} from './issues-api';
+import type { Issue, IssueStatus, TeamMember, Workspace } from './types';
 
 export type LoadState = 'loading' | 'ready' | 'failed';
 
 export interface UseIssues {
   issues: Issue[];
   members: TeamMember[];
+  workspaces: Workspace[];
   state: LoadState;
   error: string | null;
   moveIssue: (issueId: string, status: IssueStatus) => Promise<void>;
   patchIssue: (issueId: string, patch: IssuePatch) => Promise<void>;
+  addIssue: (input: Omit<CreateIssueInput, 'workspaceId'>) => Promise<Issue>;
 }
 
 /**
@@ -25,17 +35,19 @@ export interface UseIssues {
 export function useIssues(): UseIssues {
   const [issues, setIssues] = React.useState<Issue[]>([]);
   const [members, setMembers] = React.useState<TeamMember[]>([]);
+  const [workspaces, setWorkspaces] = React.useState<Workspace[]>([]);
   const [state, setState] = React.useState<LoadState>('loading');
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
 
-    Promise.all([fetchIssues(), fetchTeamMembers()])
-      .then(([loadedIssues, loadedMembers]) => {
+    Promise.all([fetchIssues(), fetchTeamMembers(), fetchWorkspaces()])
+      .then(([loadedIssues, loadedMembers, loadedWorkspaces]) => {
         if (cancelled) return;
         setIssues(loadedIssues);
         setMembers(loadedMembers);
+        setWorkspaces(loadedWorkspaces);
         setState('ready');
       })
       .catch((cause: unknown) => {
@@ -95,5 +107,29 @@ export function useIssues(): UseIssues {
     [patchIssue],
   );
 
-  return { issues, members, state, error, moveIssue, patchIssue };
+  /**
+   * Creates an issue in the tenant's first workspace.
+   *
+   * Not optimistic: the server assigns the id, and inventing a temporary one
+   * only to swap it out would complicate every list for no visible gain on a
+   * request this short.
+   */
+  const addIssue = React.useCallback(
+    async (input: Omit<CreateIssueInput, 'workspaceId'>) => {
+      const workspace = workspaces[0];
+
+      if (!workspace) {
+        throw new Error('No workspace to create the issue in');
+      }
+
+      const created = await createIssue({ ...input, workspaceId: workspace.id });
+
+      setIssues((current) => [created, ...current]);
+
+      return created;
+    },
+    [workspaces],
+  );
+
+  return { issues, members, workspaces, state, error, moveIssue, patchIssue, addIssue };
 }

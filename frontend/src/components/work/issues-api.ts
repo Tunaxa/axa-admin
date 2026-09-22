@@ -1,6 +1,6 @@
 import { apiFetch } from '@/lib/api';
 
-import type { Issue, IssuePriority, IssueStatus, TeamMember } from './types';
+import type { Issue, IssuePriority, IssueStatus, TeamMember, Workspace } from './types';
 
 interface IssueResponse {
   id: string;
@@ -32,6 +32,26 @@ export async function fetchIssues(): Promise<Issue[]> {
 
 export async function fetchTeamMembers(): Promise<TeamMember[]> {
   return apiFetch<TeamMember[]>('/users');
+}
+
+export async function fetchWorkspaces(): Promise<Workspace[]> {
+  return apiFetch<Workspace[]>('/workspaces');
+}
+
+/** Fields the quick-create modal sends. Status and priority fall back to the schema defaults. */
+export interface CreateIssueInput {
+  workspaceId: string;
+  title: string;
+  description?: string;
+}
+
+export async function createIssue(input: CreateIssueInput): Promise<Issue> {
+  const issue = await apiFetch<IssueResponse>('/issues', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
+  return toIssue(issue);
 }
 
 /** Fields the detail panel can change. */

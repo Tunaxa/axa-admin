@@ -123,6 +123,8 @@ issues are visible, and the board's header says how many are not being shown.
 | `IssueBoard` | `components/work/issue-board.tsx` | Columns, counts, empty state, drag and drop |
 | `IssueList` | `components/work/issue-list.tsx` | Table of every issue |
 | `IssueDetailPanel` | `components/work/issue-detail-panel.tsx` | Side panel with the three dropdowns |
+| `QuickCreateModal` | `components/work/quick-create-modal.tsx` | Create an issue from a title |
+| `useCreateShortcut` | `components/work/use-create-shortcut.ts` | The `c` key binding and its guards |
 | `useIssues` | `components/work/use-issues.ts` | Loads issues, applies status changes |
 | `IssueCard` | `components/work/issue-card.tsx` | Title, priority, linked app, assignee |
 | `BOARD_COLUMNS` | `components/work/board-columns.ts` | Column order and labels |
@@ -149,6 +151,22 @@ picking a value, and belongs to its own task.
 
 The panel reads the issue from the shared list on every render rather than
 keeping a copy, so it cannot drift from the board behind it.
+
+### Quick create
+
+Pressing **`c`** — or the **New issue** button in the view bar — opens a modal
+that creates an issue from a title and an optional description. Status,
+priority and assignee are left to the schema defaults and refined afterwards in
+the detail panel.
+
+The shortcut is deliberately narrow. It is ignored while the caret is in an
+input, textarea, select or contenteditable, while a modifier is held (so
+`Ctrl+C` still copies), and while any dialog is open — including the command
+palette, whose search box would otherwise compete for the key.
+
+The new issue is added to the list only once the server has accepted it, since
+the id comes from the server. If the request fails the modal stays open, shows
+the error and keeps what was typed.
 
 ### Data and drag and drop
 

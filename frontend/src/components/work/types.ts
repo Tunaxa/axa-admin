@@ -36,6 +36,13 @@ export interface Issue {
   assigneeId: string | null;
 }
 
+/** A container issues belong to. */
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 /** A person who can be assigned an issue. */
 export interface TeamMember {
   id: string;

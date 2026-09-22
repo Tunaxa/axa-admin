@@ -2,10 +2,14 @@
 
 import * as React from 'react';
 
+import { Button } from '@/components/ui/button';
+
 import { BOARD_COLUMNS } from './board-columns';
 import { IssueBoard } from './issue-board';
 import { IssueDetailPanel } from './issue-detail-panel';
 import { IssueList } from './issue-list';
+import { QuickCreateModal } from './quick-create-modal';
+import { useCreateShortcut } from './use-create-shortcut';
 import { useIssues } from './use-issues';
 import { ViewToggle, type IssueView } from './view-toggle';
 
@@ -18,7 +22,13 @@ import { ViewToggle, type IssueView } from './view-toggle';
 export function IssueViews() {
   const [view, setView] = React.useState<IssueView>('board');
   const [openIssueId, setOpenIssueId] = React.useState<string | null>(null);
-  const { issues, members, state, error, moveIssue, patchIssue } = useIssues();
+  const [creating, setCreating] = React.useState(false);
+  const { issues, members, workspaces, state, error, moveIssue, patchIssue, addIssue } =
+    useIssues();
+
+  const openQuickCreate = React.useCallback(() => setCreating(true), []);
+
+  useCreateShortcut(openQuickCreate);
 
   // Look the issue up on every render rather than storing a copy, so the
   // panel reflects a change made from the board behind it.
@@ -50,7 +60,13 @@ export function IssueViews() {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b px-4 py-2">
         <ViewToggle view={view} onChange={setView} />
-        <span className="text-muted-foreground text-xs">
+        <Button size="xs" variant="outline" className="ml-auto" onClick={openQuickCreate}>
+          New issue
+          <kbd className="bg-muted text-muted-foreground ml-1 rounded border px-1 font-mono text-[10px]">
+            c
+          </kbd>
+        </Button>
+        <span className="text-muted-foreground order-first text-xs">
           <span className="tabular-nums">{issues.length}</span>{' '}
           {issues.length === 1 ? 'issue' : 'issues'}
           {view === 'board' && offBoardCount > 0 ? (
@@ -77,6 +93,14 @@ export function IssueViews() {
           <IssueList issues={issues} members={members} onOpenIssue={setOpenIssueId} />
         )}
       </div>
+
+      {creating ? (
+        <QuickCreateModal
+          canCreate={workspaces.length > 0}
+          onClose={() => setCreating(false)}
+          onCreate={addIssue}
+        />
+      ) : null}
 
       <IssueDetailPanel
         issue={openIssue}
