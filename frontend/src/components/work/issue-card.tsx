@@ -9,18 +9,32 @@ import type { Issue } from './types';
 
 export function IssueCard({
   issue,
+  assigneeName,
   isDragging,
+  onOpen,
   onDragStart,
   onDragEnd,
 }: {
   issue: Issue;
+  assigneeName: string | null;
   isDragging: boolean;
+  onOpen: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
   return (
     <article
       draggable
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      // Dragging is mouse-only, so the keyboard needs its own way in.
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
       onDragStart={(event) => {
         // Firefox refuses to start a drag unless some data is set.
         event.dataTransfer.setData('text/plain', issue.id);
@@ -30,7 +44,8 @@ export function IssueCard({
       onDragEnd={onDragEnd}
       aria-grabbed={isDragging}
       className={cn(
-        'bg-card hover:border-ring cursor-grab rounded-md border p-3 shadow-xs transition-colors',
+        'bg-card hover:border-ring cursor-grab rounded-md border p-3 text-left shadow-xs transition-colors',
+        'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
         isDragging && 'opacity-50',
       )}
     >
@@ -47,12 +62,12 @@ export function IssueCard({
           </Badge>
         ) : null}
 
-        {issue.assigneeName ? (
+        {assigneeName ? (
           <span
             className="bg-muted text-muted-foreground ml-auto grid size-5 place-items-center rounded-full text-[10px] font-medium"
-            title={issue.assigneeName}
+            title={assigneeName}
           >
-            {issue.assigneeName.charAt(0).toUpperCase()}
+            {assigneeName.charAt(0).toUpperCase()}
           </span>
         ) : (
           <span className="text-muted-foreground ml-auto text-[11px]">Unassigned</span>

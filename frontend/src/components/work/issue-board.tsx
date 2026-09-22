@@ -5,7 +5,8 @@ import * as React from 'react';
 
 import { BOARD_COLUMNS, type BoardColumn } from './board-columns';
 import { IssueCard } from './issue-card';
-import type { Issue, IssueStatus } from './types';
+import { assigneeNameFor } from './labels';
+import type { Issue, IssueStatus, TeamMember } from './types';
 
 /**
  * Kanban board with drag and drop between columns.
@@ -15,10 +16,14 @@ import type { Issue, IssueStatus } from './types';
  */
 export function IssueBoard({
   issues,
+  members,
   onMoveIssue,
+  onOpenIssue,
 }: {
   issues: Issue[];
+  members: TeamMember[];
   onMoveIssue: (issueId: string, status: IssueStatus) => void;
+  onOpenIssue: (issueId: string) => void;
 }) {
   const [draggingId, setDraggingId] = React.useState<string | null>(null);
   const [dropTarget, setDropTarget] = React.useState<BoardColumn['status'] | null>(null);
@@ -75,7 +80,9 @@ export function IssueBoard({
                   <IssueCard
                     key={issue.id}
                     issue={issue}
+                    assigneeName={assigneeNameFor(issue.assigneeId, members)}
                     isDragging={draggingId === issue.id}
+                    onOpen={() => onOpenIssue(issue.id)}
                     onDragStart={() => setDraggingId(issue.id)}
                     onDragEnd={() => {
                       setDraggingId(null);

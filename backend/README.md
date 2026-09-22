@@ -191,6 +191,19 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   request origin, so a misconfigured deployment fails closed instead of
   accepting every site.
 
+## Team API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/users` | List everyone in the caller's tenant |
+
+Guarded by `JwtAuthGuard` and scoped to the token's `org`, like every other
+resource. It returns `id`, `name` and `email` only — `passwordHash` is never
+selected — and is ordered by name.
+
+It exists because the issue detail panel needs somewhere to read assignable
+people from. The wider roster work (roles, per-app ownership, capacity, daily
+reports) is still ahead.
 ## Issues API
 
 All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
@@ -239,8 +252,8 @@ backend/
 │   ├── app.service.ts
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
-│   ├── work/               # Issues API; projects and cycles to follow
-│   ├── team/               # Roster, roles, per-app ownership, daily reports
+│   ├── work/               # Issues, projects, cycles, board views
+│   ├── team/               # Roster listing; roles and reports to follow
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
 │   └── requests/           # Account requests and provisioning
