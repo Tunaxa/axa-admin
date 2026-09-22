@@ -68,13 +68,37 @@ Two things changed in Prisma 7 and both are easy to trip over:
 - `.env` is no longer loaded implicitly, hence the `dotenv/config` import at the
   top of `prisma.config.ts`.
 
+### Schema
+
+Three models form the tenancy base:
+
+| Model | Table | Role |
+| --- | --- | --- |
+| `Organization` | `organizations` | The tenant root |
+| `Workspace` | `workspaces` | A container inside a tenant |
+| `User` | `users` | A person who can sign in |
+
+`Workspace` and `User` both carry `organizationId` with an index and a
+cascading foreign key. Uniqueness is scoped to the tenant rather than global —
+`(organizationId, slug)` for workspaces and `(organizationId, email)` for users
+— so two organizations can each have a `core` workspace, and the same email
+address can exist in both.
+
+**Single-tenant for now.** The schema is shaped for multiple tenants, but the
+application operates on exactly one organization. Nothing in the database
+enforces that limit; it is an application-level assumption, so lifting it later
+is a code change rather than a migration of every table. Row-level isolation,
+a request-scoped tenant context and query guards are separate work.
+
+Roles, permissions and memberships are deliberately absent — they belong to the
+permissions work, not to the base schema.
+
 ### Migrations
 
-`prisma/migrations/20260922000000_init` is a deliberately empty baseline
-migration. It initialises Prisma's migration history and the
-`_prisma_migrations` table so later migrations have a baseline to build on; the
-first tables are created by the migration that introduces the multi-tenant
-schema.
+| Migration | Contents |
+| --- | --- |
+| `20260922000000_init` | Empty baseline that initialises Prisma's migration history and the `_prisma_migrations` table |
+| `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
 
 ## Structure
 
