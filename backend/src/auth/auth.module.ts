@@ -39,6 +39,10 @@ import { JwtAuthGuard } from './jwt-auth.guard.js';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard],
-  exports: [JwtAuthGuard],
+  // `JwtModule` is exported alongside the guard: `@UseGuards(JwtAuthGuard)`
+  // makes Nest instantiate the guard in the *consuming* module, so that module
+  // needs `JwtService` in scope. Exporting only the guard resolves at compile
+  // time and fails at boot.
+  exports: [JwtAuthGuard, JwtModule],
 })
 export class AuthModule {}
