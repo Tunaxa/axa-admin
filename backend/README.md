@@ -6,6 +6,7 @@ The AXA Admin API — a NestJS application.
 
 - NestJS 12 + TypeScript, running as native ESM
 - Prisma 7 over PostgreSQL 16
+- JWT authentication via `@nestjs/jwt`, bcrypt password hashing
 - Vitest for unit and end-to-end tests
 - oxlint for linting, Prettier for formatting
 
@@ -99,6 +100,66 @@ permissions work, not to the base schema.
 | --- | --- |
 | `20260922000000_init` | Empty baseline that initialises Prisma's migration history and the `_prisma_migrations` table |
 | `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
+| `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
+
+## Authentication
+
+> **Provisional.** The ecosystem-wide shared-auth/SSO decision is still open.
+> Tokens are currently issued *and* verified by this service. If AXA adopts a
+> shared identity provider, the issuing half moves out and the verifying half
+> stays — which is why they are separate pieces here.
+
+### Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/auth/register` | Create a user and return an access token |
+| `POST` | `/auth/login` | Exchange credentials for an access token |
+| `GET` | `/auth/me` | Return the claims of the presented token |
+
+`/auth/me` is guarded by `JwtAuthGuard` and exists to exercise verification.
+Reuse that guard to protect other routes:
+
+```ts
+@UseGuards(JwtAuthGuard)
+```
+
+### Token claims
+
+```json
+{ "sub": "<user id>", "org": "<organization id>", "email": "<email>" }
+```
+
+`org` is included so a verified token carries the tenant boundary with it and
+downstream code does not need a second lookup to know which tenant a request
+belongs to.
+
+### Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `JWT_SECRET` | Signing secret. Required — the app refuses to start without it. |
+| `JWT_EXPIRES_IN` | Token lifetime, default `15m` |
+
+Generate a secret per environment:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### Notes
+
+- Passwords are hashed with bcrypt at 12 rounds. `passwordHash` is never
+  returned by any endpoint.
+- Login compares against a dummy hash when the account does not exist, so a
+  missing account and a wrong password take a similar time to reject.
+- `organizationId` is passed explicitly in the register and login payloads.
+  Resolving the tenant implicitly — from the request host, from configuration,
+  or from the single existing organization — belongs to the tenant-context
+  work.
+- Requests are validated by a global `ValidationPipe` with `whitelist` and
+  `forbidNonWhitelisted`, so unknown properties are rejected rather than
+  silently dropped.
 
 ## Structure
 
@@ -109,6 +170,8 @@ backend/
 │   ├── app.module.ts       # Root module, imports every feature module
 │   ├── app.controller.ts   # Root route
 │   ├── app.service.ts
+│   ├── auth/               # JWT issue/verify, login and register
+│   ├── prisma/             # PrismaService and module
 │   ├── work/               # Issues, projects, cycles, board views
 │   ├── team/               # Roster, roles, per-app ownership, daily reports
 │   ├── company/            # Company details, KPI dashboard, goals
@@ -128,8 +191,8 @@ decisions those tasks need to make.
 
 ### Planned additions
 
-- `src/common/` — guards, interceptors, filters and the request-scoped tenant
-  context that enforces `organization_id` isolation.
+- `src/common/` — interceptors, filters and the request-scoped tenant context
+  that enforces `organization_id` isolation.
 - `src/integrations/` — a pluggable webhook/event layer behind a provider
   interface, so GitHub, Microsoft Teams and Stripe can be added or swapped
   without module code depending on a provider SDK.
