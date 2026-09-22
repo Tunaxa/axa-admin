@@ -122,6 +122,7 @@ issues are visible, and the board's header says how many are not being shown.
 | `ViewToggle` | `components/work/view-toggle.tsx` | Board / List switch |
 | `IssueBoard` | `components/work/issue-board.tsx` | Columns, counts, empty state, drag and drop |
 | `IssueList` | `components/work/issue-list.tsx` | Table of every issue |
+| `IssueDetailPanel` | `components/work/issue-detail-panel.tsx` | Side panel with the three dropdowns |
 | `useIssues` | `components/work/use-issues.ts` | Loads issues, applies status changes |
 | `IssueCard` | `components/work/issue-card.tsx` | Title, priority, linked app, assignee |
 | `BOARD_COLUMNS` | `components/work/board-columns.ts` | Column order and labels |
@@ -132,8 +133,22 @@ issues are visible, and the board's header says how many are not being shown.
 ### List
 
 A table showing **every** issue, including statuses the board has no column for,
-with Title, Status, Priority, App and Assignee. It is read-only: dragging is the
-board's job, and editing from a table row is separate work.
+with Title, Status, Priority, App and Assignee. Rows open the detail panel;
+dragging remains the board's job.
+
+### Detail panel
+
+Clicking a card or a table row opens a side panel showing the issue's title and
+description, with dropdowns for **status**, **assignee** and **priority**.
+Changing one sends a `PATCH /issues/:id` through the same optimistic path as a
+drag, so a rejected change rolls back and reports itself.
+
+The assignee options come from `GET /users`. Title, description and the linked
+application are read-only here — editing text is a different interaction from
+picking a value, and belongs to its own task.
+
+The panel reads the issue from the shared list on every render rather than
+keeping a copy, so it cannot drift from the board behind it.
 
 ### Data and drag and drop
 
