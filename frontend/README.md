@@ -40,7 +40,7 @@ frontend/
 │   │   └── globals.css      # Tailwind entry and shadcn/ui theme
 │   ├── components/
 │   │   ├── layout/          # App shell: sidebar, top bar, command palette
-│   │   ├── work/            # Issue board
+│   │   ├── work/            # Issue board and list views
 │   │   └── ui/              # shadcn/ui primitives
 │   └── lib/
 │       └── utils.ts         # `cn` class merge helper
@@ -94,9 +94,15 @@ Without that wrapper `CommandInput` throws `Cannot read properties of undefined
 (reading 'subscribe')` at render — and because the palette is mounted in the
 root layout, that takes down every page.
 
-## Issue board
+## Issue views
 
-The home page renders a kanban board with one column per workflow status:
+The home page offers two views of the same issues, switched with the Board /
+List toggle above them. Both read one request, so switching neither refetches
+nor loses a change made in the other view.
+
+### Board
+
+A kanban with one column per workflow status:
 
 | Column | Status |
 | --- | --- |
@@ -107,17 +113,27 @@ The home page renders a kanban board with one column per workflow status:
 | Done | `done` |
 
 `cancelled` is a valid issue status but has no column — cancelled work does not
-belong on a board showing what is in flight. It needs a filtered list view,
-which is separate work.
+belong on a board showing what is in flight. The list view is where those
+issues are visible, and the board's header says how many are not being shown.
 
 | Component | File | Contents |
 | --- | --- | --- |
+| `IssueViews` | `components/work/issue-views.tsx` | Owns the issues and the selected view |
+| `ViewToggle` | `components/work/view-toggle.tsx` | Board / List switch |
 | `IssueBoard` | `components/work/issue-board.tsx` | Columns, counts, empty state, drag and drop |
+| `IssueList` | `components/work/issue-list.tsx` | Table of every issue |
+| `useIssues` | `components/work/use-issues.ts` | Loads issues, applies status changes |
 | `IssueCard` | `components/work/issue-card.tsx` | Title, priority, linked app, assignee |
 | `BOARD_COLUMNS` | `components/work/board-columns.ts` | Column order and labels |
 | `Issue` types | `components/work/types.ts` | Mirror of the backend's enums |
 | `issues-api.ts` | `components/work/issues-api.ts` | `fetchIssues`, `updateIssueStatus` |
 | `api.ts` | `lib/api.ts` | Base URL, bearer token, error mapping |
+
+### List
+
+A table showing **every** issue, including statuses the board has no column for,
+with Title, Status, Priority, App and Assignee. It is read-only: dragging is the
+board's job, and editing from a table row is separate work.
 
 ### Data and drag and drop
 

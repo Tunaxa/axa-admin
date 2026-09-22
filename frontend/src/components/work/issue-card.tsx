@@ -4,31 +4,8 @@ import { cn } from 'cn';
 
 import { Badge } from '@/components/ui/badge';
 
-import type { Issue, IssuePriority } from './types';
-
-const PRIORITY_LABELS: Record<IssuePriority, string> = {
-  none: 'No priority',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  urgent: 'Urgent',
-};
-
-/** Colour carries emphasis, never meaning on its own — the label is always present. */
-const PRIORITY_STYLES: Record<IssuePriority, string> = {
-  none: 'text-muted-foreground',
-  low: 'text-muted-foreground',
-  medium: 'text-foreground',
-  high: 'text-orange-600 dark:text-orange-400',
-  urgent: 'text-red-600 dark:text-red-400',
-};
-
-const APP_LABELS: Record<NonNullable<Issue['app']>, string> = {
-  axa_admin: 'axa-admin',
-  axacrm: 'axacrm',
-  axapass: 'axapass',
-  website: 'website',
-};
+import { APP_LABELS, PRIORITY_LABELS, PRIORITY_STYLES } from './labels';
+import type { Issue } from './types';
 
 export function IssueCard({
   issue,
