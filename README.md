@@ -39,13 +39,30 @@ turning incoming account requests into active, billed accounts.
 axa-admin/
 ├── frontend/            # Next.js application
 ├── backend/             # NestJS application
-└── docker-compose.yml   # Local PostgreSQL
+├── docker-compose.yml   # Local PostgreSQL
+└── .github/workflows/   # CI
 ```
 
 The frontend and backend share a repository but are two independent projects:
 each owns its dependencies, lockfile and tooling, and neither is installed or
 built through the other. They communicate over HTTP and WebSockets, so either
 can be deployed on its own.
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`
+and `dev`. The frontend and backend are checked in separate jobs, each with its
+own `working-directory` and dependency cache, and each runs **lint**,
+**type-check** and **test**.
+
+A `detect` job runs first and reports which projects have been scaffolded, so a
+project that does not exist yet is skipped rather than failing the run. No
+workflow change is needed when a project is scaffolded — detection starts
+matching on its own.
+
+The backend job generates the Prisma client before type-checking, because the
+model types live in the generated client. It sets a placeholder `DATABASE_URL`
+for that step; generation does not open a connection, so CI starts no database.
 
 ## Git Workflow
 

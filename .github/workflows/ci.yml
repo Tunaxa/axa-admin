@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  # No branch filter: tasks are delivered as stacked pull requests whose base is
+  # often another task branch rather than `dev`, and those need checking too.
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The frontend and backend are scaffolded by separate tasks and are not both
+  # present on every branch. This job reports which exist so the checks below
+  # skip cleanly instead of failing on a directory that has no package.json.
+  #
+  # It has to run after a checkout, which is why it is a job rather than a
+  # `hashFiles` guard: job-level `if` expressions are evaluated before the
+  # workspace is populated, so such a guard would always be false.
+  detect:
+    name: Detect projects
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.check.outputs.frontend }}
+      backend: ${{ steps.check.outputs.backend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for scaffolded projects
+        id: check
+        run: |
+          for project in frontend backend; do
+            if [ -f "$project/package.json" ]; then
+              echo "$project=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$project=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          cat "$GITHUB_OUTPUT"
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      # Skips silently until the frontend has a test script.
+      - name: Test
+        run: npm run test --if-present
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # `prisma generate` reads the datasource URL through `prisma.config.ts`
+      # and fails if it is missing. Generation does not open a connection, so a
+      # syntactically valid placeholder is enough — no database is started.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The generated client carries the model types, so type-checking fails
+      # without this step.
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
