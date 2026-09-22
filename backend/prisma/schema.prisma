@@ -27,6 +27,9 @@ model Organization {
 
   workspaces Workspace[]
   users      User[]
+  projects   Project[]
+  issues     Issue[]
+  labels     Label[]
 
   @@map("organizations")
 }
@@ -42,6 +45,9 @@ model Workspace {
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projects     Project[]
+  issues       Issue[]
+  labels       Label[]
 
   // Slugs are unique per tenant, not globally, so two organizations can both
   // have a "core" workspace.
@@ -65,11 +71,149 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedIssues Issue[]
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
   @@unique([organizationId, email])
   @@index([organizationId])
   @@map("users")
+}
+
+/// A body of work inside a workspace that groups issues.
+model Project {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  workspaceId    String        @db.Uuid
+  name           String
+  description    String?
+  status         ProjectStatus @default(backlog)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  issues       Issue[]
+
+  @@index([organizationId])
+  @@index([workspaceId])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  backlog
+  planned
+  in_progress
+  paused
+  completed
+  cancelled
+
+  @@map("project_status")
+}
+
+/// A unit of work.
+model Issue {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  workspaceId    String        @db.Uuid
+  /// Null while an issue sits in the workspace backlog, unattached to a project.
+  projectId      String?       @db.Uuid
+  title          String
+  description    String?
+  status         IssueStatus   @default(backlog)
+  priority       IssuePriority @default(none)
+  /// Null when unassigned. Set to null rather than deleting the issue when the
+  /// assignee leaves.
+  assigneeId     String?       @db.Uuid
+  /// The AXA application this issue delivers against, when it targets one.
+  app            AppKey?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assignee     User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  labels       IssueLabel[]
+
+  @@index([organizationId])
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([assigneeId])
+  // Board and list views read one workspace filtered by status constantly.
+  @@index([workspaceId, status])
+  @@map("issues")
+}
+
+enum IssueStatus {
+  backlog
+  todo
+  in_progress
+  in_review
+  done
+  cancelled
+
+  @@map("issue_status")
+}
+
+/// Ordered from lowest to highest, matching the keyboard-first convention where
+/// priority is cycled through in this sequence.
+enum IssuePriority {
+  none
+  low
+  medium
+  high
+  urgent
+
+  @@map("issue_priority")
+}
+
+/// The applications in the AXA ecosystem an issue can be linked to.
+enum AppKey {
+  axa_admin
+  axacrm
+  axapass
+  website
+
+  @@map("app_key")
+}
+
+/// A tag that can be applied to issues.
+model Label {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  workspaceId    String   @db.Uuid
+  name           String
+  /// Hex colour, e.g. `#5E6AD2`.
+  color          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  issues       IssueLabel[]
+
+  // Label names are unique per workspace, so two workspaces can each have a
+  // "bug" label.
+  @@unique([workspaceId, name])
+  @@index([organizationId])
+  @@map("labels")
+}
+
+/// Join between issues and labels.
+///
+/// Explicit rather than an implicit many-to-many so the table is named, is
+/// indexed on both sides, and can carry columns later (who applied the label,
+/// and when) without a rename.
+model IssueLabel {
+  issueId String @db.Uuid
+  labelId String @db.Uuid
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, labelId])
+  @@index([labelId])
+  @@map("issue_labels")
 }
