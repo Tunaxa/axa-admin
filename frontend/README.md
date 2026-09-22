@@ -36,10 +36,11 @@ frontend/
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx       # Root layout, font, theme tokens, app shell
-│   │   ├── page.tsx         # Placeholder page content
+│   │   ├── page.tsx         # Issue board
 │   │   └── globals.css      # Tailwind entry and shadcn/ui theme
 │   ├── components/
 │   │   ├── layout/          # App shell: sidebar, top bar, command palette
+│   │   ├── work/            # Issue board
 │   │   └── ui/              # shadcn/ui primitives
 │   └── lib/
 │       └── utils.ts         # `cn` class merge helper
@@ -92,6 +93,41 @@ wrapped in `Command`:
 Without that wrapper `CommandInput` throws `Cannot read properties of undefined
 (reading 'subscribe')` at render — and because the palette is mounted in the
 root layout, that takes down every page.
+
+## Issue board
+
+The home page renders a kanban board with one column per workflow status:
+
+| Column | Status |
+| --- | --- |
+| Backlog | `backlog` |
+| Todo | `todo` |
+| In Progress | `in_progress` |
+| In Review | `in_review` |
+| Done | `done` |
+
+`cancelled` is a valid issue status but has no column — cancelled work does not
+belong on a board showing what is in flight. It needs a filtered list view,
+which is separate work.
+
+| Component | File | Contents |
+| --- | --- | --- |
+| `IssueBoard` | `components/work/issue-board.tsx` | Columns, per-column counts, empty state |
+| `IssueCard` | `components/work/issue-card.tsx` | Title, priority, linked app, assignee |
+| `BOARD_COLUMNS` | `components/work/board-columns.ts` | Column order and labels |
+| `Issue` types | `components/work/types.ts` | Mirror of the backend's enums |
+
+**Read-only, and not connected to the API.** `components/work/placeholder-issues.ts`
+supplies the rows so the columns, cards and empty state can be reviewed. Wiring
+the board to `GET /issues` needs an API client and somewhere to hold the access
+token, neither of which exists in the frontend yet; that task deletes the
+placeholder file.
+
+Dragging cards between columns is also not implemented — it changes issue
+status and needs an ordering column in the schema, which does not exist.
+
+The board scrolls horizontally rather than wrapping, so the page itself never
+overflows sideways.
 
 ## Adding shadcn/ui components
 
