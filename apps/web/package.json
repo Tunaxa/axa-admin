@@ -1,0 +1,10 @@
+{
+  "name": "@axa-admin/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AXA Admin frontend (Next.js) — scaffolded in a follow-up task",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@axa-admin/types": "workspace:*"
+  }
+}

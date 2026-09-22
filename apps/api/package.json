@@ -1,0 +1,10 @@
+{
+  "name": "@axa-admin/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AXA Admin backend (NestJS) — scaffolded in a follow-up task",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@axa-admin/types": "workspace:*"
+  }
+}
