@@ -187,6 +187,43 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   `forbidNonWhitelisted`, so unknown properties are rejected rather than
   silently dropped.
 
+## Issues API
+
+All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
+`org` claim, never to an organization id taken from the request. A caller cannot
+reach another tenant's issues by guessing ids.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/issues` | Create an issue |
+| `GET` | `/issues` | List issues, optionally filtered |
+| `PATCH` | `/issues/:id` | Update the fields supplied |
+| `DELETE` | `/issues/:id` | Delete an issue (`204`) |
+
+### Filters
+
+`GET /issues` accepts `assigneeId`, `app` and `priority`. They combine with
+AND, and an unknown enum value is rejected with `400`.
+
+```
+GET /issues?app=axacrm&priority=high
+```
+
+Results are ordered by `createdAt` descending.
+
+### Behaviour worth knowing
+
+- An issue belonging to another tenant is reported as **404, not 403**, so the
+  response never confirms that an id exists elsewhere.
+- `workspaceId`, `assigneeId` and `projectId` are checked against the caller's
+  tenant on write and rejected with `400` when they belong to another one. The
+  project is additionally checked against the issue's workspace.
+- `workspaceId` cannot be changed through `PATCH`. Moving an issue between
+  workspaces is a different operation, with its own rules about whether the
+  project and assignee follow.
+- Omitted fields keep their value; `status` and `priority` fall back to the
+  schema defaults (`backlog`, `none`) on create.
+
 ## Structure
 
 ```
@@ -198,7 +235,7 @@ backend/
 │   ├── app.service.ts
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
-│   ├── work/               # Issues, projects, cycles, board views
+│   ├── work/               # Issues API; projects and cycles to follow
 │   ├── team/               # Roster, roles, per-app ownership, daily reports
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
@@ -210,10 +247,10 @@ backend/
 └── test/                   # End-to-end tests
 ```
 
-Each feature module is currently an empty `@Module({})` registered in
-`AppModule`. Controllers, services and Prisma access are added by the feature
-task for each module, so the folder structure is in place without pre-empting
-decisions those tasks need to make.
+`work/` now holds the Issues API. The remaining feature modules are still empty
+`@Module({})`s registered in `AppModule`; controllers, services and Prisma
+access are added by the feature task for each one, so the folder structure is in
+place without pre-empting decisions those tasks need to make.
 
 ### Planned additions
 
