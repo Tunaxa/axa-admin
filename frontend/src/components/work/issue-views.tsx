@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { BOARD_COLUMNS } from './board-columns';
 import { IssueBoard } from './issue-board';
+import { IssueDetailPanel } from './issue-detail-panel';
 import { IssueList } from './issue-list';
 import { useIssues } from './use-issues';
 import { ViewToggle, type IssueView } from './view-toggle';
@@ -16,7 +17,12 @@ import { ViewToggle, type IssueView } from './view-toggle';
  */
 export function IssueViews() {
   const [view, setView] = React.useState<IssueView>('board');
-  const { issues, state, error, moveIssue } = useIssues();
+  const [openIssueId, setOpenIssueId] = React.useState<string | null>(null);
+  const { issues, members, state, error, moveIssue, patchIssue } = useIssues();
+
+  // Look the issue up on every render rather than storing a copy, so the
+  // panel reflects a change made from the board behind it.
+  const openIssue = issues.find((issue) => issue.id === openIssueId) ?? null;
 
   // The board has no column for every status, so on the board some issues are
   // counted but not drawn. Saying so is the point of offering the list.
@@ -61,11 +67,23 @@ export function IssueViews() {
 
       <div className="min-h-0 flex-1">
         {view === 'board' ? (
-          <IssueBoard issues={issues} onMoveIssue={(id, status) => void moveIssue(id, status)} />
+          <IssueBoard
+            issues={issues}
+            members={members}
+            onMoveIssue={(id, status) => void moveIssue(id, status)}
+            onOpenIssue={setOpenIssueId}
+          />
         ) : (
-          <IssueList issues={issues} />
+          <IssueList issues={issues} members={members} onOpenIssue={setOpenIssueId} />
         )}
       </div>
+
+      <IssueDetailPanel
+        issue={openIssue}
+        members={members}
+        onClose={() => setOpenIssueId(null)}
+        onPatch={(issueId, patch) => void patchIssue(issueId, patch)}
+      />
     </div>
   );
 }
