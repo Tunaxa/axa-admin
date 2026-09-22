@@ -79,6 +79,31 @@ Three models form the tenancy base:
 | `Workspace` | `workspaces` | A container inside a tenant |
 | `User` | `users` | A person who can sign in |
 
+Four more carry the work itself:
+
+| Model | Table | Role |
+| --- | --- | --- |
+| `Project` | `projects` | A body of work grouping issues |
+| `Issue` | `issues` | A unit of work |
+| `Label` | `labels` | A tag applied to issues |
+| `IssueLabel` | `issue_labels` | Join between issues and labels |
+
+`Issue` carries `status`, `priority`, `assigneeId`, its labels, and `app` — the
+AXA application it delivers against. Enums are PostgreSQL types rather than
+strings, so an unknown value is rejected by the database:
+
+| Enum | Type | Values |
+| --- | --- | --- |
+| `ProjectStatus` | `project_status` | `backlog`, `planned`, `in_progress`, `paused`, `completed`, `cancelled` |
+| `IssueStatus` | `issue_status` | `backlog`, `todo`, `in_progress`, `in_review`, `done`, `cancelled` |
+| `IssuePriority` | `issue_priority` | `none`, `low`, `medium`, `high`, `urgent` |
+| `AppKey` | `app_key` | `axa_admin`, `axacrm`, `axapass`, `website` |
+
+Deletes are chosen per relation rather than uniformly. Removing a tenant
+cascades to everything it owns, but removing an **assignee** or a **project**
+leaves the issue in place with the reference set to null — losing work because
+someone left the team or a project was closed would be the wrong default.
+
 `Workspace` and `User` both carry `organizationId` with an index and a
 cascading foreign key. Uniqueness is scoped to the tenant rather than global —
 `(organizationId, slug)` for workspaces and `(organizationId, email)` for users
@@ -101,6 +126,7 @@ permissions work, not to the base schema.
 | `20260922000000_init` | Empty baseline that initialises Prisma's migration history and the `_prisma_migrations` table |
 | `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
+| `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
 
 ## Authentication
 
