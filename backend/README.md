@@ -5,11 +5,12 @@ The AXA Admin API — a NestJS application.
 ## Stack
 
 - NestJS 12 + TypeScript, running as native ESM
+- Prisma 7 over PostgreSQL 16
 - Vitest for unit and end-to-end tests
 - oxlint for linting, Prettier for formatting
 
-Prisma over PostgreSQL, Redis and the Socket.io gateway are planned but not yet
-wired up; they arrive with their own tasks.
+Redis and the Socket.io gateway are planned but not yet wired up; they arrive
+with their own tasks.
 
 ## Getting started
 
@@ -33,9 +34,47 @@ with the frontend dev server on 3000.
 | `npm run format` | Apply Prettier |
 | `npm run format:check` | Verify formatting without writing |
 | `npm run typecheck` | Type-check without emitting |
+| `npm run db:generate` | Generate the Prisma client |
+| `npm run db:migrate` | Create and apply a migration in development |
+| `npm run db:deploy` | Apply pending migrations (CI/production) |
+| `npm run db:status` | Show migration status |
+| `npm run db:studio` | Open Prisma Studio |
 | `npm test` | Run unit tests |
 | `npm run test:e2e` | Run end-to-end tests |
 | `npm run test:cov` | Run unit tests with coverage |
+
+## Database
+
+Start PostgreSQL from the repository root, then point the backend at it:
+
+```bash
+docker compose up -d          # from the repository root
+cp .env.example .env          # in backend/
+npm run db:generate
+npm run db:status
+```
+
+The container publishes PostgreSQL on host port **5433** by default, not 5432,
+to avoid colliding with other local PostgreSQL instances. Override it with
+`POSTGRES_PORT` in the root `.env` and keep `DATABASE_URL` in `backend/.env` in
+step with it.
+
+### Prisma 7 notes
+
+Two things changed in Prisma 7 and both are easy to trip over:
+
+- The datasource URL lives in `prisma.config.ts`, **not** in `schema.prisma`.
+  The schema declares only the provider.
+- `.env` is no longer loaded implicitly, hence the `dotenv/config` import at the
+  top of `prisma.config.ts`.
+
+### Migrations
+
+`prisma/migrations/20260922000000_init` is a deliberately empty baseline
+migration. It initialises Prisma's migration history and the
+`_prisma_migrations` table so later migrations have a baseline to build on; the
+first tables are created by the migration that introduces the multi-tenant
+schema.
 
 ## Structure
 
@@ -51,6 +90,10 @@ backend/
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
 │   └── requests/           # Account requests and provisioning
+├── prisma/
+│   ├── schema.prisma       # Data model
+│   └── migrations/         # Migration history
+├── prisma.config.ts        # Prisma CLI configuration
 └── test/                   # End-to-end tests
 ```
 
@@ -66,7 +109,6 @@ decisions those tasks need to make.
 - `src/integrations/` — a pluggable webhook/event layer behind a provider
   interface, so GitHub, Microsoft Teams and Stripe can be added or swapped
   without module code depending on a provider SDK.
-- `prisma/schema.prisma` — the authoritative data model.
 
 ## ESM note
 
