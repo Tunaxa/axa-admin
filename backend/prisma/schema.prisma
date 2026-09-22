@@ -1,8 +1,5 @@
 // AXA Admin data model.
 //
-// Models are added by the tasks that own them; this file currently establishes
-// the datasource, the generator and the migration baseline.
-//
 // Note: as of Prisma 7 the connection URL lives in `prisma.config.ts`, not
 // here.
 
@@ -12,4 +9,65 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+/// The tenant root.
+///
+/// Every tenant-owned record points back to an organization through
+/// `organizationId`, which is the column that will carry tenant isolation.
+/// The application currently operates on a single organization; the schema is
+/// shaped so that lifting that restriction later is an application change
+/// rather than a migration of every table.
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspaces Workspace[]
+  users      User[]
+
+  @@map("organizations")
+}
+
+/// A container inside an organization that will own projects, issues and
+/// cycles, letting one tenant separate divisions or product lines.
+model Workspace {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  slug           String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Slugs are unique per tenant, not globally, so two organizations can both
+  // have a "core" workspace.
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("workspaces")
+}
+
+/// A person who can sign in to AXA Admin.
+///
+/// Scoped to an organization for the same reason as everything else. Roles and
+/// permissions are deliberately absent — they belong to the permissions work,
+/// not to the base schema.
+model User {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  email          String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Unique per tenant rather than globally, so the same address can exist in
+  // two organizations once multi-tenancy is switched on.
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@map("users")
 }
