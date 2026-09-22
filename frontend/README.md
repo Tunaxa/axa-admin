@@ -58,7 +58,7 @@ bar above the content, and the page in a scrollable main region.
 | `AppShell` | `components/layout/app-shell.tsx` | Composition of the three below |
 | `AppSidebar` | `components/layout/app-sidebar.tsx` | Brand and primary navigation |
 | `TopBar` | `components/layout/top-bar.tsx` | Command palette trigger, account button |
-| `CommandPalette` | `components/layout/command-palette.tsx` | Palette shell, opens on Ctrl/Cmd+K |
+| `CommandPalette` | `components/layout/command-palette.tsx` | Issue search, opens on Ctrl/Cmd+K |
 
 Navigation items live in `components/layout/nav-items.ts` and are shared by the
 sidebar and the palette, so they cannot drift apart.
@@ -69,8 +69,8 @@ sidebar and the palette, so they cannot drift apart.
   linking to them would not type-check under `typedRoutes` and would 404.
 - The current item is hard-coded to the first entry so the active style is
   visible. Deriving it from the route belongs to the task that adds routing.
-- The palette opens, filters and closes, but selecting an item only closes it —
-  there are no commands to run.
+- The palette searches issues (see below); its navigation items are still
+  inert.
 - The account button is inert; session UI arrives with frontend auth.
 - The sidebar is hidden below `md`. A mobile drawer needs open/close state,
   which is navigation behaviour rather than layout.
@@ -125,6 +125,7 @@ issues are visible, and the board's header says how many are not being shown.
 | `IssueDetailPanel` | `components/work/issue-detail-panel.tsx` | Side panel with the three dropdowns |
 | `QuickCreateModal` | `components/work/quick-create-modal.tsx` | Create an issue from a title |
 | `useCreateShortcut` | `components/work/use-create-shortcut.ts` | The `c` key binding and its guards |
+| `IssuesProvider` | `components/work/issues-provider.tsx` | Shares issues and the open issue across the tree |
 | `useIssues` | `components/work/use-issues.ts` | Loads issues, applies status changes |
 | `IssueCard` | `components/work/issue-card.tsx` | Title, priority, linked app, assignee |
 | `BOARD_COLUMNS` | `components/work/board-columns.ts` | Column order and labels |
@@ -151,6 +152,23 @@ picking a value, and belongs to its own task.
 
 The panel reads the issue from the shared list on every render rather than
 keeping a copy, so it cannot drift from the board behind it.
+
+### Command palette search
+
+**Ctrl/Cmd+K** opens the palette. Typing searches the issues already loaded —
+by title and by status, so `cancelled` finds work the board has no column for.
+Selecting a result opens that issue's detail panel.
+
+Issues appear only once something has been typed: the palette is for finding a
+specific issue, and listing all of them on open would bury everything else. At
+most 50 results render, because cmdk keeps every item mounted and scores it on
+each keystroke.
+
+The palette lives in the top bar and the board lives in the page — different
+parts of the tree. Rather than letting the palette fetch its own copy of the
+issues, `IssuesProvider` sits above the app shell and both read from it. That
+is why an issue created a moment ago through quick create is immediately
+findable, with no refetch.
 
 ### Quick create
 
