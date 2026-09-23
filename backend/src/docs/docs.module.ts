@@ -1,10 +1,18 @@
 import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+
+import { Page, PageSchema } from './schemas/page.schema.js';
 
 /**
  * Living documentation: architecture, conventions and developer onboarding.
  *
- * Scaffolded with no controllers or providers yet; those arrive with the
- * feature tasks for this module.
+ * Schema only so far. The page tree and its content blocks are modelled; the
+ * controllers and services that read and write them arrive with their own
+ * tasks.
  */
-@Module({})
+@Module({
+  imports: [
+    MongooseModule.forFeature([{ name: Page.name, schema: PageSchema }]),
+  ],
+})
 export class DocsModule {}
