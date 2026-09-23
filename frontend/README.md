@@ -40,6 +40,7 @@ frontend/
 │   │   └── globals.css      # Tailwind entry and shadcn/ui theme
 │   ├── components/
 │   │   ├── layout/          # App shell: sidebar, top bar, command palette
+│   │   ├── team/            # Roster grid and list
 │   │   ├── work/            # Issue board and list views
 │   │   └── ui/              # shadcn/ui primitives
 │   └── lib/
@@ -74,6 +75,13 @@ sidebar and the palette, so they cannot drift apart.
 - The account button is inert; session UI arrives with frontend auth.
 - The sidebar is hidden below `md`. A mobile drawer needs open/close state,
   which is navigation behaviour rather than layout.
+
+### Navigation
+
+Sidebar items with a route render as `next/link` and highlight via
+`usePathname`; the rest are still non-navigating buttons. Only **Work** (`/`)
+and **Team** (`/team`) have pages, so those two are links today — each module's
+task adds its own `href` when its page exists.
 
 ### cmdk context
 
@@ -209,6 +217,29 @@ in that file. Until a sign-in flow exists, the board shows its error state.
 
 The board scrolls horizontally rather than wrapping, so the page itself never
 overflows sideways.
+
+## Team roster
+
+`/team` shows the roster in two layouts, switched by a Grid / List toggle. Both
+carry the same three things: **who someone is** (initials avatar, name, email),
+**the role they hold**, and **which applications they own**.
+
+| Component | File | Contents |
+| --- | --- | --- |
+| `RosterView` | `components/team/roster-view.tsx` | Layout toggle, grid and table |
+| `Avatar`, `RoleBadge`, `OwnershipTags` | `components/team/member-bits.tsx` | The three pieces both layouts share |
+| `fetchRoster` | `components/team/roster-api.ts` | `GET /team-members` |
+
+**There are no avatar images in the data model**, so the avatar is the member's
+initials. It is `aria-hidden`, because the name is always rendered next to it.
+
+**Ownership tags carry the app *and* the role held there** — the same person
+can own one application and only read another, so showing the app alone would
+lose the half that matters. Role badges are tinted but always show their label,
+so nothing depends on colour alone.
+
+An empty roster says why: registering creates a user account, and membership is
+granted separately.
 
 ## Adding shadcn/ui components
 
