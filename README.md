@@ -30,7 +30,7 @@ turning incoming account requests into active, billed accounts.
 - **Frontend** — Next.js, React, TypeScript, Tailwind CSS, shadcn/ui
 - **State & data** — TanStack Query, WebSockets
 - **Backend** — NestJS, Prisma
-- **Data** — PostgreSQL (primary), Redis (cache and real-time)
+- **Data** — PostgreSQL (primary), MongoDB (docs pages), Redis (cache and real-time)
 - **Infrastructure** — Docker, GitHub Actions
 
 ## Repository Structure
@@ -39,7 +39,7 @@ turning incoming account requests into active, billed accounts.
 axa-admin/
 ├── frontend/            # Next.js application
 ├── backend/             # NestJS application
-├── docker-compose.yml   # Local PostgreSQL
+├── docker-compose.yml   # Local PostgreSQL and MongoDB
 └── .github/workflows/   # CI
 ```
 
