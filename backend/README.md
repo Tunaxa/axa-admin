@@ -230,6 +230,56 @@ with a `400`.
   prose; the point at which blocks would have to move to their own collection
   is far past any real documentation page.
 
+## Docs API
+
+All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
+`org` claim, never to an organization id taken from the request.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/docs/pages` | Create a page |
+| `GET` | `/docs/pages` | The tenant's tree, **without** page content |
+| `GET` | `/docs/pages/:id` | One page, with its blocks |
+| `PATCH` | `/docs/pages/:id` | Update the fields supplied |
+| `DELETE` | `/docs/pages/:id` | Delete the page **and everything below it** |
+
+### Behaviour worth knowing
+
+- **`ancestors` is never accepted from a caller.** It is derived from the parent
+  on create and recomputed on a move. A tree whose paths can be set by hand is
+  a tree that will eventually disagree with itself; sending the field is
+  rejected with a `400`.
+- **Moving a page rewrites its descendants' paths**, in one pipelined
+  `updateMany` rather than one write per descendant.
+- **A page cannot be moved under itself or under its own descendant.** Both are
+  refused with a `400`, because either one detaches a whole branch from the
+  tree and leaves it reachable from nothing.
+- **`GET /docs/pages` leaves out `blocks`.** A sidebar needs every node to draw
+  itself and none of their content, which is the bulk of a page. One request
+  for the whole tree, not one per level.
+- **`PATCH` with `blocks` replaces the content wholesale.** A page's content is
+  an ordered list, and a partial update has no way to say that a block was
+  deleted — so a caller changing one paragraph sends the list back.
+- **`DELETE` removes the subtree** and answers `200 {"deleted": n}` rather than
+  the `204` the other modules use. Refusing while a page has children would
+  leave no way to remove a section except leaf by leaf, and a call that took
+  twelve pages with it should say so.
+- **A duplicate slug is a `409`.** It is caught from the write rather than
+  checked beforehand: two callers creating the same slug at once would both
+  pass a check, and only the unique index can actually decide.
+- A page belonging to another tenant is reported as **404, not 403**, so the
+  response never confirms that an id exists elsewhere.
+- A path parameter that is not a MongoDB id is a **400**, not a `500`.
+
+### The slug uniqueness depends on an index
+
+`409` on a duplicate slug is the unique index doing its job — the API has no
+other check. Mongoose creates that index at startup (`autoIndex` defaults to
+true), so a normal boot has it. **An environment where the index is missing
+will silently accept duplicate slugs**, and `/docs/<slug>` then has two answers.
+`autoIndex` is not what production should rely on; applying the indexes as a
+deployment step is a task of its own and has not been done.
+
 ## Authentication
 
 > **Provisional.** The ecosystem-wide shared-auth/SSO decision is still open.
