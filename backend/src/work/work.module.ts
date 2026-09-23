@@ -4,6 +4,8 @@ import { AuthModule } from '../auth/auth.module.js';
 import { ActivityService } from './activity.service.js';
 import { IssuesController } from './issues.controller.js';
 import { IssuesService } from './issues.service.js';
+import { ProjectsController } from './projects.controller.js';
+import { ProjectsService } from './projects.service.js';
 import { WorkspacesController } from './workspaces.controller.js';
 import { WorkspacesService } from './workspaces.service.js';
 
@@ -15,7 +17,12 @@ import { WorkspacesService } from './workspaces.service.js';
  */
 @Module({
   imports: [AuthModule],
-  controllers: [IssuesController, WorkspacesController],
-  providers: [IssuesService, WorkspacesService, ActivityService],
+  controllers: [IssuesController, ProjectsController, WorkspacesController],
+  providers: [
+    IssuesService,
+    ProjectsService,
+    WorkspacesService,
+    ActivityService,
+  ],
 })
 export class WorkModule {}
