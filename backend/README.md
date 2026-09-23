@@ -87,6 +87,7 @@ Four more carry the work itself:
 | `Issue` | `issues` | A unit of work |
 | `Label` | `labels` | A tag applied to issues |
 | `IssueLabel` | `issue_labels` | Join between issues and labels |
+| `ActivityEvent` | `activity_events` | Append-only event log |
 
 `Issue` carries `status`, `priority`, `assigneeId`, its labels, and `app` — the
 AXA application it delivers against. Enums are PostgreSQL types rather than
@@ -98,6 +99,7 @@ strings, so an unknown value is rejected by the database:
 | `IssueStatus` | `issue_status` | `backlog`, `todo`, `in_progress`, `in_review`, `done`, `cancelled` |
 | `IssuePriority` | `issue_priority` | `none`, `low`, `medium`, `high`, `urgent` |
 | `AppKey` | `app_key` | `axa_admin`, `axacrm`, `axapass`, `website` |
+| `ActivityEventType` | `activity_event_type` | `issue_status_changed`, `issue_assigned`, `issue_commented` |
 
 Deletes are chosen per relation rather than uniformly. Removing a tenant
 cascades to everything it owns, but removing an **assignee** or a **project**
@@ -127,6 +129,7 @@ permissions work, not to the base schema.
 | `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
+| `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 
 ## Authentication
 
@@ -251,6 +254,46 @@ Results are ordered by `createdAt` descending.
 - Omitted fields keep their value; `status` and `priority` fall back to the
   schema defaults (`backlog`, `none`) on create.
 
+## Activity feed
+
+An append-only log of what happened to an issue.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/issues/:id/activity` | The issue's events, newest first |
+| `POST` | `/issues/:id/comments` | Record a comment |
+
+Events are written by the issues service, in the **same transaction** as the
+change they describe, so the feed cannot end up disagreeing with the issue.
+
+| Type | Recorded when | Payload |
+| --- | --- | --- |
+| `issue_status_changed` | `PATCH` changes `status` | `{ "from": "todo", "to": "in_progress" }` |
+| `issue_assigned` | `PATCH` changes `assigneeId` | `{ "from": null, "to": "<user id>" }` |
+| `issue_commented` | `POST /issues/:id/comments` | `{ "body": "…" }` |
+
+A `PATCH` that sets a field to the value it already has records nothing, and
+fields other than status and assignee are not logged — the feed is a record of
+the decisions worth reading back, not a diff of every column.
+
+### Append-only
+
+There is no `updatedAt` on `activity_events` and nothing rewrites a row. A
+correction is a new event. That is what makes the feed a record of *what
+happened* rather than of what things look like now, and it is the property the
+account-request audit trail will depend on later.
+
+`actorId` is `SetNull` rather than cascading, so an event survives the person
+who caused it leaving. Deleting the **issue** does cascade its events, which
+follows from issues being hard-deletable.
+
+### Comments have no table of their own
+
+A comment is an activity event carrying its text, so comments **cannot be
+edited or deleted**. That is a deliberate floor, not the end state: the data
+model notes an `IssueComment` entity, and when it arrives the event should
+reference the comment by id instead of carrying the body.
+
 ## Structure
 
 ```
@@ -262,7 +305,7 @@ backend/
 │   ├── app.service.ts
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
-│   ├── work/               # Workspaces API; issues, projects and cycles to follow
+│   ├── work/               # Issues, workspaces and the activity feed
 │   ├── team/               # Roster listing; roles and reports to follow
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
