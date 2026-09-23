@@ -261,7 +261,16 @@ An append-only log of what happened to an issue.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/issues/:id/activity` | The issue's events, newest first |
+| `GET` | `/projects/:id/activity` | The project's events, newest first (capped at 100) |
 | `POST` | `/issues/:id/comments` | Record a comment |
+
+`GET /projects` lists the tenant's projects, which is what the feed's project
+picker reads.
+
+The project feed is scoped through the issue's **current** `projectId` rather
+than a column on the event, so an issue moved between projects takes its
+history with it. Recording the project on each event would instead freeze where
+it happened — a defensible reading, but not the one a project feed is read for.
 
 Events are written by the issues service, in the **same transaction** as the
 change they describe, so the feed cannot end up disagreeing with the issue.
@@ -305,7 +314,7 @@ backend/
 │   ├── app.service.ts
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
-│   ├── work/               # Issues, workspaces and the activity feed
+│   ├── work/               # Issues, projects, workspaces and the activity feed
 │   ├── team/               # Roster listing; roles and reports to follow
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
