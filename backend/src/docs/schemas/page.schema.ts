@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 import { Block, BlockSchema } from './block.schema.js';
+import { stripMongoId } from './strip-mongo-id.js';
 
 export type PageDocument = HydratedDocument<Page>;
 
@@ -18,7 +19,15 @@ export type PageDocument = HydratedDocument<Page>;
  * hold a foreign key to another database, so nothing here cascades — see the
  * README.
  */
-@Schema({ collection: 'pages', timestamps: true, versionKey: false })
+@Schema({
+  collection: 'pages',
+  timestamps: true,
+  versionKey: false,
+  // Every other endpoint in this API answers with `id`. Mongo's own `_id` is
+  // an implementation detail of one module and should not leak into the
+  // clients that have to consume all of them.
+  toJSON: { virtuals: true, transform: stripMongoId },
+})
 export class Page {
   /** The owning tenant, from the verified token — never from a request body. */
   @Prop({ required: true })
