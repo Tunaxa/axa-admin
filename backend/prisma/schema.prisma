@@ -25,11 +25,12 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  workspaces Workspace[]
-  users      User[]
-  projects   Project[]
-  issues     Issue[]
-  labels     Label[]
+  workspaces   Workspace[]
+  users        User[]
+  dailyReports DailyReport[]
+  projects     Project[]
+  issues       Issue[]
+  labels       Label[]
 
   @@map("organizations")
 }
@@ -71,8 +72,9 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedIssues Issue[]
+  dailyReports   DailyReport[]
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
@@ -131,11 +133,12 @@ model Issue {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  assignee     User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project      Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assignee     User?              @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
   labels       IssueLabel[]
+  dailyReports DailyReportIssue[]
 
   @@index([organizationId])
   @@index([workspaceId])
@@ -216,4 +219,53 @@ model IssueLabel {
   @@id([issueId, labelId])
   @@index([labelId])
   @@map("issue_labels")
+}
+
+/// A developer's update for one working day.
+///
+/// The structured replacement for an ad hoc chat message: the same three
+/// questions every day, so a team leader can read a week without re-reading a
+/// conversation.
+model DailyReport {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  /// The developer the report is from.
+  authorId       String   @db.Uuid
+  /// The working day covered, with no time component.
+  reportDate     DateTime @db.Date
+  /// What was shipped today.
+  shipped        String
+  /// What is blocked. Null when nothing is — "no blockers" and "did not say"
+  /// are different answers, and a team leader needs to tell them apart.
+  blocked        String?
+  /// What they are working on next.
+  next           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  issues       DailyReportIssue[]
+
+  // One report per person per day: a second one is an edit, not a new report.
+  @@unique([authorId, reportDate])
+  // The digest reads one tenant for one day.
+  @@index([organizationId, reportDate])
+  @@map("daily_reports")
+}
+
+/// Join between a daily report and the issues it refers to.
+///
+/// Explicit rather than an implicit many-to-many so the table is named and can
+/// carry columns later without a rename.
+model DailyReportIssue {
+  reportId String @db.Uuid
+  issueId  String @db.Uuid
+
+  report DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  issue  Issue       @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@id([reportId, issueId])
+  @@index([issueId])
+  @@map("daily_report_issues")
 }
