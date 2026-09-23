@@ -40,6 +40,7 @@ frontend/
 │   │   └── globals.css      # Tailwind entry and shadcn/ui theme
 │   ├── components/
 │   │   ├── layout/          # App shell: sidebar, top bar, command palette
+│   │   ├── team/            # Daily report form
 │   │   ├── work/            # Issue board and list views
 │   │   └── ui/              # shadcn/ui primitives
 │   └── lib/
@@ -209,6 +210,38 @@ in that file. Until a sign-in flow exists, the board shows its error state.
 
 The board scrolls horizontally rather than wrapping, so the page itself never
 overflows sideways.
+
+## Daily reports
+
+`/team/reports` is the submission form: what was **shipped**, what is
+**blocked**, what is **next**, plus the issues the report refers to.
+
+| Component | File | Contents |
+| --- | --- | --- |
+| `DailyReportForm` | `components/team/daily-report-form.tsx` | Day picker and the form |
+| `daily-reports-api.ts` | `components/team/daily-reports-api.ts` | `/auth/me`, read and submit |
+
+**The form loads the chosen day before letting you save it.** Submitting is a
+`PUT` that replaces the whole report, so opening the page and saving without
+loading first would quietly wipe an earlier update. When a report already
+exists the form says so and the button reads *Update report*.
+
+**Leaving Blocked empty means nothing is blocked** — it is sent as absent, and
+the API stores null, which is how "no blockers" stays distinguishable from
+"did not say".
+
+**The day comes from the viewer's own timezone**, not the server's, because the
+API takes the date in the path and the column is a calendar date. Future days
+are not selectable.
+
+Issues come from the shared `IssuesProvider`, so the list matches the board.
+
+### Reaching the page
+
+The route is `/team/reports`. It is **not linked from the sidebar yet**: the
+Team nav item is given its `href` by the roster branch, and adding a second
+`href` here would collide in the same file. Once both land, the natural home is
+a tab on the Team page.
 
 ## Adding shadcn/ui components
 
