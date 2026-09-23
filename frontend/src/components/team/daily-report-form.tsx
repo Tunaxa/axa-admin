@@ -7,7 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useIssuesContext } from '@/components/work/issues-provider';
 
-import { fetchMe, fetchReport, submitReport, todayIso } from './daily-reports-api';
+import {
+  fetchIssuesClosedOn,
+  fetchMe,
+  fetchReport,
+  submitReport,
+  todayIso,
+} from './daily-reports-api';
+import type { ClosedIssue, DailyReport } from './types';
 
 /**
  * Daily report form.
@@ -97,6 +104,7 @@ function ReportFields({ date, authorId }: { date: string; authorId: string }) {
   const [blocked, setBlocked] = React.useState('');
   const [next, setNext] = React.useState('');
   const [issueIds, setIssueIds] = React.useState<string[]>([]);
+  const [prefilled, setPrefilled] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
@@ -104,8 +112,8 @@ function ReportFields({ date, authorId }: { date: string; authorId: string }) {
   React.useEffect(() => {
     let cancelled = false;
 
-    fetchReport(date, authorId)
-      .then((report) => {
+    loadDay(date, authorId)
+      .then(({ report, closed }) => {
         if (cancelled) return;
 
         if (report) {
@@ -114,6 +122,9 @@ function ReportFields({ date, authorId }: { date: string; authorId: string }) {
           setBlocked(report.blocked ?? '');
           setNext(report.next);
           setIssueIds(report.issues.map((issue) => issue.id));
+        } else if (closed.length > 0) {
+          setShipped(closed.map((issue) => issue.title).join('\n'));
+          setPrefilled(closed.length);
         }
 
         setState('ready');
@@ -184,6 +195,11 @@ function ReportFields({ date, authorId }: { date: string; authorId: string }) {
       {existed ? (
         <p className="text-muted-foreground border-l-2 pl-2 text-xs">
           You already filed a report for this day. Saving replaces it.
+        </p>
+      ) : prefilled > 0 ? (
+        <p className="text-muted-foreground border-l-2 pl-2 text-xs">
+          Shipped was filled in from the {prefilled} issue
+          {prefilled === 1 ? '' : 's'} you closed this day. Edit it freely.
         </p>
       ) : null}
 
@@ -268,6 +284,31 @@ function ReportFields({ date, authorId }: { date: string; authorId: string }) {
       </div>
     </form>
   );
+}
+
+/**
+ * Loads a day: the report if one exists, otherwise the issues closed that day
+ * to prefill it with.
+ *
+ * An existing report is never overwritten by the prefill — what someone wrote
+ * outranks what the board can infer.
+ *
+ * Prefilling is a convenience, so a Work module that cannot be reached leaves
+ * the field empty rather than stopping the report from being filed.
+ */
+async function loadDay(
+  date: string,
+  authorId: string,
+): Promise<{ report: DailyReport | null; closed: ClosedIssue[] }> {
+  const report = await fetchReport(date, authorId);
+
+  if (report) {
+    return { report, closed: [] };
+  }
+
+  const closed = await fetchIssuesClosedOn(date, authorId).catch(() => []);
+
+  return { report: null, closed };
 }
 
 function Field({

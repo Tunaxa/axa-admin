@@ -17,3 +17,9 @@ export interface SubmitDailyReport {
   next: string;
   issueIds?: string[];
 }
+
+/** An issue the Work module reports as closed, used to prefill a report. */
+export interface ClosedIssue {
+  id: string;
+  title: string;
+}
