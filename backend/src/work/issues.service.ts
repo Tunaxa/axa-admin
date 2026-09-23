@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { IssueStatus } from '@prisma/client';
 import type { Issue, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -47,6 +48,8 @@ export class IssuesService {
         assigneeId: dto.assigneeId,
         projectId: dto.projectId,
         app: dto.app,
+        // An issue created straight into `done` was closed now.
+        closedAt: dto.status === IssueStatus.done ? new Date() : null,
       },
     });
   }
@@ -64,6 +67,14 @@ export class IssuesService {
 
     if (query.priority) {
       where.priority = query.priority;
+    }
+
+    if (query.closedAfter || query.closedBefore) {
+      where.closedAt = {
+        ...(query.closedAfter ? { gte: new Date(query.closedAfter) } : {}),
+        // Exclusive, so a day and the next one do not both claim midnight.
+        ...(query.closedBefore ? { lt: new Date(query.closedBefore) } : {}),
+      };
     }
 
     return this.prisma.issue.findMany({
@@ -91,9 +102,19 @@ export class IssuesService {
       );
     }
 
+    const data: Prisma.IssueUncheckedUpdateInput = { ...dto };
+
+    // `closedAt` is maintained here rather than by the caller, so the board's
+    // drag-and-drop and the detail panel record it without knowing about it.
+    // Re-sending the same status leaves it alone: it marks the move into
+    // `done`, not the last time someone confirmed the issue was done.
+    if (dto.status && dto.status !== issue.status) {
+      data.closedAt = dto.status === IssueStatus.done ? new Date() : null;
+    }
+
     return this.prisma.issue.update({
       where: { id },
-      data: dto,
+      data,
     });
   }
 
