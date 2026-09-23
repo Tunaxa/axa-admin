@@ -35,3 +35,8 @@ export function todayIso(): string {
 
   return local.toISOString().slice(0, 10);
 }
+
+/** Every report one developer filed, newest day first — the API's own order. */
+export async function fetchReportsByAuthor(authorId: string): Promise<DailyReport[]> {
+  return apiFetch<DailyReport[]>(`/daily-reports?authorId=${encodeURIComponent(authorId)}`);
+}
