@@ -130,6 +130,10 @@ model Issue {
   assigneeId     String?       @db.Uuid
   /// The AXA application this issue delivers against, when it targets one.
   app            AppKey?
+  /// When the issue last moved into `done`. Null while it is open, and set back
+  /// to null if it is reopened. Distinct from `updatedAt`, which any later edit
+  /// moves — renaming a finished issue must not change the day it was closed.
+  closedAt       DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -146,6 +150,8 @@ model Issue {
   @@index([assigneeId])
   // Board and list views read one workspace filtered by status constantly.
   @@index([workspaceId, status])
+  // "What did this person close on this day" — the daily report prefill.
+  @@index([organizationId, closedAt])
   @@map("issues")
 }
 
