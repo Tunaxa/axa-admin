@@ -88,6 +88,13 @@ Four more carry the work itself:
 | `Label` | `labels` | A tag applied to issues |
 | `IssueLabel` | `issue_labels` | Join between issues and labels |
 
+And two carry daily reports:
+
+| Model | Table | Role |
+| --- | --- | --- |
+| `DailyReport` | `daily_reports` | One developer's update for one working day |
+| `DailyReportIssue` | `daily_report_issues` | The issues a report refers to |
+
 `Issue` carries `status`, `priority`, `assigneeId`, its labels, and `app` — the
 AXA application it delivers against. Enums are PostgreSQL types rather than
 strings, so an unknown value is rejected by the database:
@@ -119,6 +126,30 @@ a request-scoped tenant context and query guards are separate work.
 Roles, permissions and memberships are deliberately absent — they belong to the
 permissions work, not to the base schema.
 
+### Daily reports
+
+A `DailyReport` answers the same three questions every day — what was
+**shipped**, what is **blocked**, what is **next** — and links to the issues it
+refers to.
+
+**`blocked` is the only nullable one.** "Nothing is blocked" and "did not say"
+are different answers, and a team leader needs to tell them apart; `shipped` and
+`next` always have to be filled in.
+
+**`reportDate` is a `date`, not a timestamp.** A report covers a working day, so
+a time component would let the same day exist twice and quietly break the
+`(authorId, reportDate)` uniqueness that makes one report per person per day
+possible.
+
+**Reports belong to a `User`, not a `TeamMember`.** Taking someone off the
+roster must not erase their work log — a team leader may still need last
+month's reports. Deleting the *account* does remove them, which is the right
+line to draw.
+
+**Deleting an issue removes the link, not the report.** The report is what
+someone wrote that day; a ticket disappearing afterwards does not make their
+update untrue.
+
 ### Migrations
 
 | Migration | Contents |
@@ -127,6 +158,7 @@ permissions work, not to the base schema.
 | `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
+| `20260923030029_add_daily_reports` | Creates `daily_reports` and `daily_report_issues` |
 
 ## Authentication
 
