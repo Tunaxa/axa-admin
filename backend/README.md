@@ -6,6 +6,7 @@ The AXA Admin API — a NestJS application.
 
 - NestJS 12 + TypeScript, running as native ESM
 - Prisma 7 over PostgreSQL 16
+- Mongoose over MongoDB 8 for the docs module's pages
 - JWT authentication via `@nestjs/jwt`, bcrypt password hashing
 - Vitest for unit and end-to-end tests
 - oxlint for linting, Prettier for formatting
@@ -59,6 +60,11 @@ The container publishes PostgreSQL on host port **5433** by default, not 5432,
 to avoid colliding with other local PostgreSQL instances. Override it with
 `POSTGRES_PORT` in the root `.env` and keep `DATABASE_URL` in `backend/.env` in
 step with it.
+
+`docker compose up -d` now starts **two** databases: PostgreSQL and MongoDB.
+MongoDB publishes on **27018**, again to avoid a collision, and the API needs
+`MONGODB_URL` set — it refuses to boot without it rather than starting with a
+docs module that cannot read anything.
 
 ### Prisma 7 notes
 
@@ -127,6 +133,102 @@ permissions work, not to the base schema.
 | `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
+
+## Docs content schema
+
+The docs module's pages live in **MongoDB**, not PostgreSQL. A page is read and
+written whole, its content is a list of blocks whose shape differs per block
+type, and none of it is queried relationally — which is what a document store
+is for. Everything else in this service stays in PostgreSQL.
+
+| Collection | Contents |
+| --- | --- |
+| `pages` | A documentation page: its place in the tree, and its content blocks |
+
+### The page tree
+
+| Field | Purpose |
+| --- | --- |
+| `organizationId` | The owning tenant, as a PostgreSQL UUID |
+| `title` | The page's name |
+| `slug` | URL segment, unique per tenant |
+| `parentId` | The page directly above, null at the root |
+| `ancestors` | Every page above, ordered root first |
+| `order` | Position among siblings |
+| `blocks` | The content, in reading order |
+| `authorId`, `lastEditedById` | PostgreSQL user UUIDs |
+
+**The tree is stored twice, on purpose.** `parentId` is the edge; `ancestors`
+is the whole path from the root. With `parentId` alone, expanding a branch or
+building a breadcrumb costs one query per level. `ancestors` answers both in a
+single indexed read:
+
+```js
+// Everything below a page, at any depth.
+db.pages.find({ organizationId, ancestors: pageId })
+
+// One level of the sidebar, in order.
+db.pages.find({ organizationId, parentId }).sort({ order: 1 })
+```
+
+The cost is that **moving a page has to rewrite the `ancestors` of everything
+beneath it**. That is the rarer operation, and it is a single
+`updateMany` — the right side of the trade for a tree that is read constantly
+and reshaped occasionally.
+
+**`slug` is unique per tenant, not per parent**, so `/docs/<slug>` addresses a
+page wherever it sits in the tree. Moving a page then does not break links to
+it, which a nested path would guarantee.
+
+### Content blocks
+
+Blocks are **embedded in their page**, not a collection of their own. A page is
+what gets read, edited and permissioned; a block outside its page means
+nothing. Embedding also makes a save atomic, so a page is never half-written.
+
+| Field | Purpose |
+| --- | --- |
+| `_id` | Assigned by Mongo; what anchors and links point at |
+| `type` | One of the listed block types |
+| `text` | The block's text, empty for blocks that carry none |
+| `props` | The fields only some types have |
+
+Types: `paragraph`, `heading_1`, `heading_2`, `heading_3`,
+`bulleted_list_item`, `numbered_list_item`, `quote`, `callout`, `code`,
+`divider`, `image`. The list is closed, so a typo cannot create a block type
+nothing knows how to render.
+
+`props` is deliberately untyped, and carries per type:
+
+| Type | Keys |
+| --- | --- |
+| `code` | `language` |
+| `image` | `url`, `alt` |
+| `callout` | `icon` |
+| everything else | none |
+
+A discriminated union in the schema would have to be extended every time the
+editor gains a block type. The rule that matters — which keys a type accepts —
+belongs with the endpoint that writes blocks, where a bad value can be refused
+with a `400`.
+
+### What this schema does not do
+
+- **Nothing cascades from PostgreSQL.** `organizationId`, `authorId` and
+  `lastEditedById` are UUIDs in another database; Mongo cannot hold a foreign
+  key to it. Deleting an organization leaves its pages behind, and cleaning
+  them up is the application's job.
+- **Blocks are a flat list.** Nesting — a list item containing sub-items — is
+  not modelled. It would be a `children` array on `Block`, and it can be added
+  without moving any existing data.
+- **No versioning, no drafts, no page history.**
+- **No permissions.** Every page in a tenant is readable by anything that can
+  query the collection.
+- **No full-text search index.** Searching docs is its own task, and the index
+  it needs depends on whether search is Mongo's or something else's job.
+- **A page's content is capped by Mongo's 16 MB document limit.** Enormous for
+  prose; the point at which blocks would have to move to their own collection
+  is far past any real documentation page.
 
 ## Authentication
 
