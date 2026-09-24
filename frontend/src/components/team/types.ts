@@ -16,6 +16,7 @@ export interface SubmitDailyReport {
   blocked?: string;
   next: string;
   issueIds?: string[];
+}
 /**
  * Roster shapes.
  *
