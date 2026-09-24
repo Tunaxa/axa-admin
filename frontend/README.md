@@ -239,13 +239,15 @@ overflows sideways.
 
 ## Daily reports
 
-`/team/reports` is the submission form: what was **shipped**, what is
-**blocked**, what is **next**, plus the issues the report refers to.
+`/team/reports` holds two views, switched by the toggle at the top: **Submit**,
+the form for one day, and **Timeline**, one developer's reports over time.
 
 | Component | File | Contents |
 | --- | --- | --- |
+| `ReportsView` | `components/team/reports-view.tsx` | Submit / timeline switch |
 | `DailyReportForm` | `components/team/daily-report-form.tsx` | Day picker and the form |
-| `daily-reports-api.ts` | `components/team/daily-reports-api.ts` | `/auth/me`, read and submit |
+| `DailyReportTimeline` | `components/team/daily-report-timeline.tsx` | Developer picker and the timeline |
+| `daily-reports-api.ts` | `components/team/daily-reports-api.ts` | `/auth/me`, read, submit, read by author |
 
 **The form loads the chosen day before letting you save it.** Submitting is a
 `PUT` that replaces the whole report, so opening the page and saving without
@@ -261,6 +263,24 @@ API takes the date in the path and the column is a calendar date. Future days
 are not selectable.
 
 Issues come from the shared `IssuesProvider`, so the list matches the board.
+
+### The timeline
+
+The **Timeline** view lists one developer's reports, newest day first. The
+developer list comes from the same `IssuesProvider` as the board's assignees,
+and the reports come from `GET /daily-reports?authorId=...`, which already
+filters and orders them — the view only renders what it is given.
+
+**A day with no report is simply absent.** The API has no row for "did not
+submit", so a gap in the timeline is a gap, not a claim that nobody worked.
+Answering "who owes a report for Tuesday" needs the roster to compare against.
+
+**`reportDate` is formatted in UTC.** It arrives as UTC midnight, so reading it
+in the viewer's timezone would label it the previous day for anyone west of
+Greenwich.
+
+**A report with no blocker reads "Nothing blocked."** rather than showing an
+empty field, which is the distinction the nullable column exists for.
 
 ### Reaching the page
 

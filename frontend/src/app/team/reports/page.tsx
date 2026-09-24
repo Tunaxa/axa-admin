@@ -1,5 +1,5 @@
-import { DailyReportForm } from '@/components/team/daily-report-form';
+import { ReportsView } from '@/components/team/reports-view';
 
 export default function DailyReportsPage() {
-  return <DailyReportForm />;
+  return <ReportsView />;
 }
