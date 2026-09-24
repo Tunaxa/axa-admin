@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
 
+import { ActivityFeed } from './activity-feed';
 import { BOARD_COLUMNS } from './board-columns';
 import { IssueBoard } from './issue-board';
 import { IssueDetailPanel } from './issue-detail-panel';
@@ -26,6 +27,7 @@ export function IssueViews() {
     issues,
     members,
     workspaces,
+    projects,
     state,
     error,
     moveIssue,
@@ -98,8 +100,10 @@ export function IssueViews() {
             onMoveIssue={(id, status) => void moveIssue(id, status)}
             onOpenIssue={setOpenIssueId}
           />
-        ) : (
+        ) : view === 'list' ? (
           <IssueList issues={issues} members={members} onOpenIssue={setOpenIssueId} />
+        ) : (
+          <ActivityFeed projects={projects} issues={issues} members={members} />
         )}
       </div>
 

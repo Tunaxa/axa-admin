@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { IssueStatus } from '@prisma/client';
 import type { Issue, Prisma } from '@prisma/client';
+import type { ActivityEvent, Issue, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ActivityService } from './activity.service.js';
 import type { CreateIssueDto } from './dto/create-issue.dto.js';
 import type { ListIssuesQuery } from './dto/list-issues.query.js';
 import type { UpdateIssueDto } from './dto/update-issue.dto.js';
@@ -20,7 +22,10 @@ import type { UpdateIssueDto } from './dto/update-issue.dto.js';
  */
 @Injectable()
 export class IssuesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activity: ActivityService,
+  ) {}
 
   async create(organizationId: string, dto: CreateIssueDto): Promise<Issue> {
     await this.assertWorkspaceInTenant(organizationId, dto.workspaceId);
@@ -85,6 +90,7 @@ export class IssuesService {
 
   async update(
     organizationId: string,
+    actorId: string,
     id: string,
     dto: UpdateIssueDto,
   ): Promise<Issue> {
@@ -115,7 +121,77 @@ export class IssuesService {
     return this.prisma.issue.update({
       where: { id },
       data,
+    })
+    // The update and the events it produces go in one transaction: a feed that
+    // disagrees with the issue it describes is worse than no feed.
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.issue.update({ where: { id }, data: dto });
+
+      const base = {
+        organizationId,
+        workspaceId: issue.workspaceId,
+        issueId: issue.id,
+        actorId,
+      };
+
+      if (dto.status !== undefined && dto.status !== issue.status) {
+        await this.activity.record(
+          {
+            ...base,
+            type: 'issue_status_changed',
+            payload: { from: issue.status, to: dto.status },
+          },
+          tx,
+        );
+      }
+
+      if (dto.assigneeId !== undefined && dto.assigneeId !== issue.assigneeId) {
+        await this.activity.record(
+          {
+            ...base,
+            type: 'issue_assigned',
+            payload: { from: issue.assigneeId, to: dto.assigneeId ?? null },
+          },
+          tx,
+        );
+      }
+
+      return updated;
     });
+  }
+
+  /**
+   * Records a comment on an issue.
+   *
+   * Comments live in the activity feed for now: there is no separate comment
+   * table, so they cannot be edited or deleted. See the README.
+   */
+  async comment(
+    organizationId: string,
+    actorId: string,
+    id: string,
+    body: string,
+  ): Promise<ActivityEvent> {
+    const issue = await this.findInTenant(organizationId, id);
+
+    return this.activity.record({
+      organizationId,
+      workspaceId: issue.workspaceId,
+      issueId: issue.id,
+      type: 'issue_commented',
+      actorId,
+      payload: { body },
+    });
+  }
+
+  /** The activity feed for one issue, newest first. */
+  async activityFor(
+    organizationId: string,
+    id: string,
+  ): Promise<ActivityEvent[]> {
+    await this.findInTenant(organizationId, id);
+
+    return this.activity.listForIssue(organizationId, id);
   }
 
   async remove(organizationId: string, id: string): Promise<void> {
