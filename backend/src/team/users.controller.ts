@@ -4,7 +4,7 @@ import {
   type AuthenticatedRequest,
   JwtAuthGuard,
 } from '../auth/jwt-auth.guard.js';
-import { type TeamMember, UsersService } from './users.service.js';
+import { type UserSummary, UsersService } from './users.service.js';
 
 /** Scoped to the tenant in the token, like every other resource. */
 @Controller('users')
@@ -13,7 +13,7 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Get()
-  list(@Req() request: AuthenticatedRequest): Promise<TeamMember[]> {
+  list(@Req() request: AuthenticatedRequest): Promise<UserSummary[]> {
     return this.users.list(request.user.org);
   }
 }

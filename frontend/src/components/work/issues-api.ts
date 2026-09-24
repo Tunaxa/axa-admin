@@ -1,6 +1,14 @@
 import { apiFetch } from '@/lib/api';
 
-import type { Issue, IssuePriority, IssueStatus, TeamMember, Workspace } from './types';
+import type {
+  ActivityEvent,
+  Issue,
+  IssuePriority,
+  IssueStatus,
+  Project,
+  TeamMember,
+  Workspace,
+} from './types';
 
 interface IssueResponse {
   id: string;
@@ -36,6 +44,14 @@ export async function fetchTeamMembers(): Promise<TeamMember[]> {
 
 export async function fetchWorkspaces(): Promise<Workspace[]> {
   return apiFetch<Workspace[]>('/workspaces');
+}
+
+export async function fetchProjects(): Promise<Project[]> {
+  return apiFetch<Project[]>('/projects');
+}
+
+export async function fetchProjectActivity(projectId: string): Promise<ActivityEvent[]> {
+  return apiFetch<ActivityEvent[]>(`/projects/${projectId}/activity`);
 }
 
 /** Fields the quick-create modal sends. Status and priority fall back to the schema defaults. */

@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { DailyReportsController } from './daily-reports.controller.js';
 import { DailyReportsService } from './daily-reports.service.js';
+import { RosterController } from './roster.controller.js';
+import { RosterService } from './roster.service.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 
@@ -14,7 +16,7 @@ import { UsersService } from './users.service.js';
  */
 @Module({
   imports: [AuthModule],
-  controllers: [DailyReportsController, UsersController],
-  providers: [DailyReportsService, UsersService],
+  controllers: [RosterController, UsersController, DailyReportsController],
+  providers: [RosterService, UsersService, DailyReportsService],
 })
 export class TeamModule {}
