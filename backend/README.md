@@ -273,6 +273,49 @@ Guarded and tenant-scoped like everything else, returning `id`, `name` and
 `slug` ordered by name. It exists because creating an issue requires a
 `workspaceId` and the frontend had no way to learn one.
 
+## Daily reports API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `PUT` | `/daily-reports/:date` | Submit or edit your report for that day |
+| `GET` | `/daily-reports` | List reports, filterable by `date` and `authorId` |
+
+Guarded and tenant-scoped like every other resource. **The author is always the
+caller** — `authorId` in the body is rejected, so nobody can file a report on
+someone else's behalf.
+
+### Why `PUT` with the date in the path
+
+There is one report per person per day, so submitting again is an **edit**, not
+a second report. `PUT` says that: it is idempotent, and resubmitting replaces
+the whole report — including clearing `blocked` when it is left out.
+
+The date is explicit rather than derived from the server clock. Deriving
+"today" server-side would give someone in Tunis a different day from the
+server, and the column is a `date`, so the client's day is the one that
+matters. `:date` is `YYYY-MM-DD`; `2026-02-31` is rejected rather than rolling
+over into March.
+
+### Linked issues
+
+`issueIds` are checked against the caller's tenant and de-duplicated; an id from
+another organization is a **400**. On an edit the links are replaced wholesale —
+the report says which issues it refers to *now*.
+
+Deleting an issue removes it from the report's links and leaves the report
+standing.
+
+### Reading
+
+`GET /daily-reports` returns the tenant's reports, newest day first and then by
+author name, so a day's digest reads in a stable order rather than by whoever
+submitted first. `?date=YYYY-MM-DD` gives one day's digest; `?authorId=` gives
+one person's history.
+
+There are **no visibility rules yet** — any authenticated caller in the tenant
+can read every report. The specification says reports are visible to the
+appropriate team leader; nothing enforces that.
+
 ## Team API
 
 | Method | Path | Purpose |
@@ -411,7 +454,7 @@ backend/
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
 │   ├── work/               # Workspaces API; issues, projects and cycles to follow
-│   ├── team/               # Roster CRUD and the user listing; reports to follow
+│   ├── team/               # Daily reports and the user listing; roster to follow
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
 │   └── requests/           # Account requests and provisioning
