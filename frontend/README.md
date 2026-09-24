@@ -76,6 +76,13 @@ sidebar and the palette, so they cannot drift apart.
 - The sidebar is hidden below `md`. A mobile drawer needs open/close state,
   which is navigation behaviour rather than layout.
 
+### Navigation
+
+Sidebar items with a route render as `next/link` and highlight via
+`usePathname`; the rest are still non-navigating buttons. Only **Work** (`/`)
+and **Team** (`/team`) have pages, so those two are links today — each module's
+task adds its own `href` when its page exists.
+
 ### cmdk context
 
 `CommandDialog` from the shadcn registry renders its children straight into the
@@ -120,9 +127,10 @@ issues are visible, and the board's header says how many are not being shown.
 | Component | File | Contents |
 | --- | --- | --- |
 | `IssueViews` | `components/work/issue-views.tsx` | Owns the issues and the selected view |
-| `ViewToggle` | `components/work/view-toggle.tsx` | Board / List switch |
+| `ViewToggle` | `components/work/view-toggle.tsx` | Board / List / Activity switch |
 | `IssueBoard` | `components/work/issue-board.tsx` | Columns, counts, empty state, drag and drop |
 | `IssueList` | `components/work/issue-list.tsx` | Table of every issue |
+| `ActivityFeed` | `components/work/activity-feed.tsx` | Per-project chronological feed |
 | `IssueDetailPanel` | `components/work/issue-detail-panel.tsx` | Side panel with the three dropdowns |
 | `QuickCreateModal` | `components/work/quick-create-modal.tsx` | Create an issue from a title |
 | `useCreateShortcut` | `components/work/use-create-shortcut.ts` | The `c` key binding and its guards |
@@ -170,6 +178,24 @@ parts of the tree. Rather than letting the palette fetch its own copy of the
 issues, `IssuesProvider` sits above the app shell and both read from it. That
 is why an issue created a moment ago through quick create is immediately
 findable, with no refetch.
+
+### Activity
+
+A third view alongside Board and List: a chronological feed of what happened in
+one project, newest first and grouped by day.
+
+Each event is rendered as a sentence rather than a raw payload — "Rochdi moved
+*Add a test database to CI* from Todo to In Progress" — with actor names and
+issue titles resolved from the data the provider already holds, and statuses
+shown by their labels.
+
+The project picker defaults to the first project. Switching remounts the feed
+via a `key`, so each project starts from a clean loading state instead of an
+effect resetting it.
+
+The feed reads `GET /projects/:id/activity`. With no projects it says so, since
+the feed is scoped to one and there is currently **no way to create a project
+from the UI** — the API exposes only a listing.
 
 ### Quick create
 
@@ -242,6 +268,28 @@ The route is `/team/reports`. It is **not linked from the sidebar yet**: the
 Team nav item is given its `href` by the roster branch, and adding a second
 `href` here would collide in the same file. Once both land, the natural home is
 a tab on the Team page.
+## Team roster
+
+`/team` shows the roster in two layouts, switched by a Grid / List toggle. Both
+carry the same three things: **who someone is** (initials avatar, name, email),
+**the role they hold**, and **which applications they own**.
+
+| Component | File | Contents |
+| --- | --- | --- |
+| `RosterView` | `components/team/roster-view.tsx` | Layout toggle, grid and table |
+| `Avatar`, `RoleBadge`, `OwnershipTags` | `components/team/member-bits.tsx` | The three pieces both layouts share |
+| `fetchRoster` | `components/team/roster-api.ts` | `GET /team-members` |
+
+**There are no avatar images in the data model**, so the avatar is the member's
+initials. It is `aria-hidden`, because the name is always rendered next to it.
+
+**Ownership tags carry the app *and* the role held there** — the same person
+can own one application and only read another, so showing the app alone would
+lose the half that matters. Role badges are tinted but always show their label,
+so nothing depends on colour alone.
+
+An empty roster says why: registering creates a user account, and membership is
+granted separately.
 
 ## Adding shadcn/ui components
 

@@ -25,12 +25,15 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  workspaces   Workspace[]
-  users        User[]
   dailyReports DailyReport[]
-  projects     Project[]
-  issues       Issue[]
-  labels       Label[]
+  workspaces    Workspace[]
+  users         User[]
+  teamMembers   TeamMember[]
+  appOwnerships AppOwnership[]
+  projects      Project[]
+  issues        Issue[]
+  labels        Label[]
+  activity   ActivityEvent[]
 
   @@map("organizations")
 }
@@ -49,6 +52,7 @@ model Workspace {
   projects     Project[]
   issues       Issue[]
   labels       Label[]
+  activity     ActivityEvent[]
 
   // Slugs are unique per tenant, not globally, so two organizations can both
   // have a "core" workspace.
@@ -75,6 +79,8 @@ model User {
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedIssues Issue[]
   dailyReports   DailyReport[]
+  teamMember     TeamMember?
+  activity       ActivityEvent[]
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
@@ -139,6 +145,7 @@ model Issue {
   assignee     User?              @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
   labels       IssueLabel[]
   dailyReports DailyReportIssue[]
+  activity     ActivityEvent[]
 
   @@index([organizationId])
   @@index([workspaceId])
@@ -268,4 +275,106 @@ model DailyReportIssue {
   @@id([reportId, issueId])
   @@index([issueId])
   @@map("daily_report_issues")
+}
+/// A person's place on the team, and the role they hold by default.
+///
+/// Deliberately separate from `User`, which is the sign-in identity. Whether
+/// AXA adopts shared authentication across the ecosystem is still an open
+/// decision; if it does, `User` loses its tenant column and this becomes the
+/// record that ties an identity to an organization. Keeping them apart now
+/// means that change does not have to move roles at the same time.
+model TeamMember {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  /// Applies wherever no per-application ownership overrides it.
+  role           Role     @default(viewer)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ownerships   AppOwnership[]
+
+  // One membership per person per tenant.
+  @@unique([userId])
+  @@index([organizationId])
+  @@map("team_members")
+}
+
+/// The role a member holds for one application.
+///
+/// This is the `role x app` scoping the permission model calls for: a member
+/// can lead `axapass` while only reading `axacrm`. A member with no row for an
+/// application falls back to `TeamMember.role`.
+model AppOwnership {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  teamMemberId   String   @db.Uuid
+  app            AppKey
+  role           Role
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMember   TeamMember   @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+
+  // One role per member per application; a second row would make the effective
+  // role ambiguous.
+  @@unique([teamMemberId, app])
+  @@index([organizationId])
+  @@index([app])
+  @@map("app_ownerships")
+}
+
+/// The fixed system roles.
+///
+/// A closed set on purpose: the plan is to start with fixed roles and add a
+/// customizable role editor later. Promoting this to a table is a migration
+/// when that day comes, which is the price of not building an editor nobody
+/// has asked for yet.
+enum Role {
+  owner
+  pm_lead
+  dev_team_leader
+  developer
+  designer
+  viewer
+
+  @@map("role")
+}
+/// An entry in the activity feed.
+///
+/// Append-only: there is no `updatedAt` and nothing rewrites a row. A
+/// correction is a new event, which is what makes the feed usable as a record
+/// of what happened rather than of what things look like now.
+model ActivityEvent {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  workspaceId    String            @db.Uuid
+  issueId        String            @db.Uuid
+  type           ActivityEventType
+  /// The member who caused the event. Null for events raised by automation.
+  actorId        String?           @db.Uuid
+  /// Type-specific detail, e.g. `{ "from": "todo", "to": "in_progress" }`.
+  payload        Json
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  issue        Issue        @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  // The feed is always read for one issue, newest first.
+  @@index([issueId, createdAt])
+  @@map("activity_events")
+}
+
+enum ActivityEventType {
+  issue_status_changed
+  issue_assigned
+  issue_commented
+
+  @@map("activity_event_type")
 }
