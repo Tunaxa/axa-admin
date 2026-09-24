@@ -1,15 +1,16 @@
 'use client';
 
 import { cn } from 'cn';
-import { Columns3, List } from 'lucide-react';
+import { Activity, Columns3, List } from 'lucide-react';
 
-export const ISSUE_VIEWS = ['board', 'list'] as const;
+export const ISSUE_VIEWS = ['board', 'list', 'activity'] as const;
 
 export type IssueView = (typeof ISSUE_VIEWS)[number];
 
 const VIEW_OPTIONS: { view: IssueView; label: string; icon: typeof List }[] = [
   { view: 'board', label: 'Board', icon: Columns3 },
   { view: 'list', label: 'List', icon: List },
+  { view: 'activity', label: 'Activity', icon: Activity },
 ];
 
 /**

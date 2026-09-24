@@ -51,6 +51,27 @@ export class ActivityService {
     });
   }
 
+  /**
+   * The feed for one project, newest first.
+   *
+   * Scoped through the issue's current `projectId` rather than a column on the
+   * event: an issue moved between projects therefore takes its history with
+   * it. Recording the project on the event would freeze where each event
+   * happened, which is a different and equally defensible reading — this one
+   * answers "what has happened in this project", which is what a project feed
+   * is read for.
+   */
+  listForProject(
+    organizationId: string,
+    projectId: string,
+  ): Promise<ActivityEvent[]> {
+    return this.prisma.activityEvent.findMany({
+      where: { organizationId, issue: { projectId } },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
   /** The feed for one issue, newest first. */
   listForIssue(
     organizationId: string,

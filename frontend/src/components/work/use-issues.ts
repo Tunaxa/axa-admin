@@ -5,13 +5,14 @@ import * as React from 'react';
 import {
   createIssue,
   fetchIssues,
+  fetchProjects,
   fetchTeamMembers,
   fetchWorkspaces,
   updateIssue,
   type CreateIssueInput,
   type IssuePatch,
 } from './issues-api';
-import type { Issue, IssueStatus, TeamMember, Workspace } from './types';
+import type { Issue, IssueStatus, Project, TeamMember, Workspace } from './types';
 
 export type LoadState = 'loading' | 'ready' | 'failed';
 
@@ -19,6 +20,7 @@ export interface UseIssues {
   issues: Issue[];
   members: TeamMember[];
   workspaces: Workspace[];
+  projects: Project[];
   state: LoadState;
   error: string | null;
   moveIssue: (issueId: string, status: IssueStatus) => Promise<void>;
@@ -36,18 +38,20 @@ export function useIssues(): UseIssues {
   const [issues, setIssues] = React.useState<Issue[]>([]);
   const [members, setMembers] = React.useState<TeamMember[]>([]);
   const [workspaces, setWorkspaces] = React.useState<Workspace[]>([]);
+  const [projects, setProjects] = React.useState<Project[]>([]);
   const [state, setState] = React.useState<LoadState>('loading');
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
 
-    Promise.all([fetchIssues(), fetchTeamMembers(), fetchWorkspaces()])
-      .then(([loadedIssues, loadedMembers, loadedWorkspaces]) => {
+    Promise.all([fetchIssues(), fetchTeamMembers(), fetchWorkspaces(), fetchProjects()])
+      .then(([loadedIssues, loadedMembers, loadedWorkspaces, loadedProjects]) => {
         if (cancelled) return;
         setIssues(loadedIssues);
         setMembers(loadedMembers);
         setWorkspaces(loadedWorkspaces);
+        setProjects(loadedProjects);
         setState('ready');
       })
       .catch((cause: unknown) => {
@@ -131,5 +135,5 @@ export function useIssues(): UseIssues {
     [workspaces],
   );
 
-  return { issues, members, workspaces, state, error, moveIssue, patchIssue, addIssue };
+  return { issues, members, workspaces, projects, state, error, moveIssue, patchIssue, addIssue };
 }
