@@ -79,6 +79,13 @@ Three models form the tenancy base:
 | `Workspace` | `workspaces` | A container inside a tenant |
 | `User` | `users` | A person who can sign in |
 
+Two carry the team:
+
+| Model | Table | Role |
+| --- | --- | --- |
+| `TeamMember` | `team_members` | A person's place on the team and their default role |
+| `AppOwnership` | `app_ownerships` | The role that person holds for one application |
+
 Four more carry the work itself:
 
 | Model | Table | Role |
@@ -87,6 +94,7 @@ Four more carry the work itself:
 | `Issue` | `issues` | A unit of work |
 | `Label` | `labels` | A tag applied to issues |
 | `IssueLabel` | `issue_labels` | Join between issues and labels |
+| `ActivityEvent` | `activity_events` | Append-only event log |
 
 And two carry daily reports:
 
@@ -105,6 +113,8 @@ strings, so an unknown value is rejected by the database:
 | `IssueStatus` | `issue_status` | `backlog`, `todo`, `in_progress`, `in_review`, `done`, `cancelled` |
 | `IssuePriority` | `issue_priority` | `none`, `low`, `medium`, `high`, `urgent` |
 | `AppKey` | `app_key` | `axa_admin`, `axacrm`, `axapass`, `website` |
+| `Role` | `role` | `owner`, `pm_lead`, `dev_team_leader`, `developer`, `designer`, `viewer` |
+| `ActivityEventType` | `activity_event_type` | `issue_status_changed`, `issue_assigned`, `issue_commented` |
 
 Deletes are chosen per relation rather than uniformly. Removing a tenant
 cascades to everything it owns, but removing an **assignee** or a **project**
@@ -149,6 +159,34 @@ line to draw.
 **Deleting an issue removes the link, not the report.** The report is what
 someone wrote that day; a ticket disappearing afterwards does not make their
 update untrue.
+### Team and roles
+
+`TeamMember` is deliberately separate from `User`. `User` is the sign-in
+identity; `TeamMember` is the person's place on the team. Whether AXA adopts
+shared authentication across the ecosystem is still open — if it does, `User`
+loses its tenant column and `TeamMember` becomes what ties an identity to an
+organization, without roles having to move at the same time.
+
+**`role x app` is expressed by `AppOwnership`.** A member holds a default
+`role`, and a row per application overrides it:
+
+| Member | Default | axapass | axacrm | Effective on axacrm |
+| --- | --- | --- | --- | --- |
+| Lead | `dev_team_leader` | `owner` | `viewer` | `viewer` |
+| Dev | `viewer` | `developer` | — | `viewer` (default) |
+
+So the effective role is *the ownership row for that application if one exists,
+otherwise the member's default* — one left join, no precedence rules to
+remember.
+
+`(userId)` is unique, so a person has one membership; `(teamMemberId, app)` is
+unique, so their role for an application is never ambiguous.
+
+**Roles are an enum, not a table.** The plan is fixed roles now and a
+customizable role editor later; promoting the enum to a table is a migration
+when that day comes, which is the price of not building an editor nobody has
+asked for. Approval rights — which the permission model keeps independent of
+job title — are not here either; they are their own layer and their own task.
 
 ### Migrations
 
@@ -159,6 +197,8 @@ update untrue.
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
 | `20260923030029_add_daily_reports` | Creates `daily_reports` and `daily_report_issues` |
+| `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
+| `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 
 ## Authentication
 
@@ -237,15 +277,42 @@ Guarded and tenant-scoped like everything else, returning `id`, `name` and
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/users` | List everyone in the caller's tenant |
+| `GET` | `/team-members` | The roster: membership, role, user details and app ownerships |
+| `POST` | `/team-members` | Put an existing user on the team |
+| `PATCH` | `/team-members/:id` | Change a member's role |
+| `DELETE` | `/team-members/:id` | Remove someone from the team (`204`) |
+| `GET` | `/users` | List sign-in identities in the caller's tenant |
 
-Guarded by `JwtAuthGuard` and scoped to the token's `org`, like every other
-resource. It returns `id`, `name` and `email` only — `passwordHash` is never
-selected — and is ordered by name.
+All guarded by `JwtAuthGuard` and scoped to the token's `org`, like every other
+resource. `passwordHash` is never selected.
 
-It exists because the issue detail panel needs somewhere to read assignable
-people from. The wider roster work (roles, per-app ownership, capacity, daily
-reports) is still ahead.
+### Behaviour worth knowing
+
+- **Registering does not put anyone on the team.** `POST /auth/register` creates
+  a `User`; membership is granted deliberately through `POST /team-members`. A
+  tenant can therefore have users and an empty roster — which is exactly the
+  state every tenant is in today.
+- **Removing a member does not delete their account.** The `User` survives; the
+  membership goes, and their app ownerships cascade away with it.
+- `role` defaults to `viewer` when omitted on create.
+- Adding someone twice returns **409**. The unique constraint would reject it
+  anyway, but a conflict that explains itself beats a 500.
+- Adding a user from another tenant returns **400**, and a membership in another
+  tenant reads as **404** rather than 403 — the response never confirms that an
+  id exists elsewhere.
+- `PATCH` changes the role and nothing else. Moving a membership to a different
+  person is removing one and adding another, not an edit.
+- The roster is ordered by the member's name, and each row carries its
+  `role x app` ownerships.
+
+### `/users` versus `/team-members`
+
+Both exist and answer different questions. `/users` lists sign-in identities and
+is what the assignee picker reads; `/team-members` is the roster, with roles.
+They will need reconciling once assignment should be limited to people actually
+on the team — a product decision, not a refactor.
+
+Capacity, daily reports and managing app ownerships are still ahead.
 ## Issues API
 
 All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
@@ -283,6 +350,55 @@ Results are ordered by `createdAt` descending.
 - Omitted fields keep their value; `status` and `priority` fall back to the
   schema defaults (`backlog`, `none`) on create.
 
+## Activity feed
+
+An append-only log of what happened to an issue.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/issues/:id/activity` | The issue's events, newest first |
+| `GET` | `/projects/:id/activity` | The project's events, newest first (capped at 100) |
+| `POST` | `/issues/:id/comments` | Record a comment |
+
+`GET /projects` lists the tenant's projects, which is what the feed's project
+picker reads.
+
+The project feed is scoped through the issue's **current** `projectId` rather
+than a column on the event, so an issue moved between projects takes its
+history with it. Recording the project on each event would instead freeze where
+it happened — a defensible reading, but not the one a project feed is read for.
+
+Events are written by the issues service, in the **same transaction** as the
+change they describe, so the feed cannot end up disagreeing with the issue.
+
+| Type | Recorded when | Payload |
+| --- | --- | --- |
+| `issue_status_changed` | `PATCH` changes `status` | `{ "from": "todo", "to": "in_progress" }` |
+| `issue_assigned` | `PATCH` changes `assigneeId` | `{ "from": null, "to": "<user id>" }` |
+| `issue_commented` | `POST /issues/:id/comments` | `{ "body": "…" }` |
+
+A `PATCH` that sets a field to the value it already has records nothing, and
+fields other than status and assignee are not logged — the feed is a record of
+the decisions worth reading back, not a diff of every column.
+
+### Append-only
+
+There is no `updatedAt` on `activity_events` and nothing rewrites a row. A
+correction is a new event. That is what makes the feed a record of *what
+happened* rather than of what things look like now, and it is the property the
+account-request audit trail will depend on later.
+
+`actorId` is `SetNull` rather than cascading, so an event survives the person
+who caused it leaving. Deleting the **issue** does cascade its events, which
+follows from issues being hard-deletable.
+
+### Comments have no table of their own
+
+A comment is an activity event carrying its text, so comments **cannot be
+edited or deleted**. That is a deliberate floor, not the end state: the data
+model notes an `IssueComment` entity, and when it arrives the event should
+reference the comment by id instead of carrying the body.
+
 ## Structure
 
 ```
@@ -295,7 +411,7 @@ backend/
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
 │   ├── work/               # Workspaces API; issues, projects and cycles to follow
-│   ├── team/               # Roster listing; roles and reports to follow
+│   ├── team/               # Roster CRUD and the user listing; reports to follow
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
 │   └── requests/           # Account requests and provisioning
