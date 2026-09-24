@@ -79,6 +79,13 @@ Three models form the tenancy base:
 | `Workspace` | `workspaces` | A container inside a tenant |
 | `User` | `users` | A person who can sign in |
 
+Two carry the team:
+
+| Model | Table | Role |
+| --- | --- | --- |
+| `TeamMember` | `team_members` | A person's place on the team and their default role |
+| `AppOwnership` | `app_ownerships` | The role that person holds for one application |
+
 Four more carry the work itself:
 
 | Model | Table | Role |
@@ -99,6 +106,7 @@ strings, so an unknown value is rejected by the database:
 | `IssueStatus` | `issue_status` | `backlog`, `todo`, `in_progress`, `in_review`, `done`, `cancelled` |
 | `IssuePriority` | `issue_priority` | `none`, `low`, `medium`, `high`, `urgent` |
 | `AppKey` | `app_key` | `axa_admin`, `axacrm`, `axapass`, `website` |
+| `Role` | `role` | `owner`, `pm_lead`, `dev_team_leader`, `developer`, `designer`, `viewer` |
 | `ActivityEventType` | `activity_event_type` | `issue_status_changed`, `issue_assigned`, `issue_commented` |
 
 Deletes are chosen per relation rather than uniformly. Removing a tenant
@@ -121,6 +129,35 @@ a request-scoped tenant context and query guards are separate work.
 Roles, permissions and memberships are deliberately absent — they belong to the
 permissions work, not to the base schema.
 
+### Team and roles
+
+`TeamMember` is deliberately separate from `User`. `User` is the sign-in
+identity; `TeamMember` is the person's place on the team. Whether AXA adopts
+shared authentication across the ecosystem is still open — if it does, `User`
+loses its tenant column and `TeamMember` becomes what ties an identity to an
+organization, without roles having to move at the same time.
+
+**`role x app` is expressed by `AppOwnership`.** A member holds a default
+`role`, and a row per application overrides it:
+
+| Member | Default | axapass | axacrm | Effective on axacrm |
+| --- | --- | --- | --- | --- |
+| Lead | `dev_team_leader` | `owner` | `viewer` | `viewer` |
+| Dev | `viewer` | `developer` | — | `viewer` (default) |
+
+So the effective role is *the ownership row for that application if one exists,
+otherwise the member's default* — one left join, no precedence rules to
+remember.
+
+`(userId)` is unique, so a person has one membership; `(teamMemberId, app)` is
+unique, so their role for an application is never ambiguous.
+
+**Roles are an enum, not a table.** The plan is fixed roles now and a
+customizable role editor later; promoting the enum to a table is a migration
+when that day comes, which is the price of not building an editor nobody has
+asked for. Approval rights — which the permission model keeps independent of
+job title — are not here either; they are their own layer and their own task.
+
 ### Migrations
 
 | Migration | Contents |
@@ -129,6 +166,7 @@ permissions work, not to the base schema.
 | `20260922031628_add_base_multi_tenant_schema` | Creates `organizations`, `workspaces` and `users` |
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
+| `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 
 ## Authentication

@@ -25,11 +25,13 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  workspaces Workspace[]
-  users      User[]
-  projects   Project[]
-  issues     Issue[]
-  labels     Label[]
+  workspaces    Workspace[]
+  users         User[]
+  teamMembers   TeamMember[]
+  appOwnerships AppOwnership[]
+  projects      Project[]
+  issues        Issue[]
+  labels        Label[]
   activity   ActivityEvent[]
 
   @@map("organizations")
@@ -75,6 +77,7 @@ model User {
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedIssues Issue[]
+  teamMember     TeamMember?
   activity       ActivityEvent[]
 
   // Unique per tenant rather than globally, so the same address can exist in
@@ -222,6 +225,73 @@ model IssueLabel {
   @@map("issue_labels")
 }
 
+/// A person's place on the team, and the role they hold by default.
+///
+/// Deliberately separate from `User`, which is the sign-in identity. Whether
+/// AXA adopts shared authentication across the ecosystem is still an open
+/// decision; if it does, `User` loses its tenant column and this becomes the
+/// record that ties an identity to an organization. Keeping them apart now
+/// means that change does not have to move roles at the same time.
+model TeamMember {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  /// Applies wherever no per-application ownership overrides it.
+  role           Role     @default(viewer)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ownerships   AppOwnership[]
+
+  // One membership per person per tenant.
+  @@unique([userId])
+  @@index([organizationId])
+  @@map("team_members")
+}
+
+/// The role a member holds for one application.
+///
+/// This is the `role x app` scoping the permission model calls for: a member
+/// can lead `axapass` while only reading `axacrm`. A member with no row for an
+/// application falls back to `TeamMember.role`.
+model AppOwnership {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  teamMemberId   String   @db.Uuid
+  app            AppKey
+  role           Role
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMember   TeamMember   @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+
+  // One role per member per application; a second row would make the effective
+  // role ambiguous.
+  @@unique([teamMemberId, app])
+  @@index([organizationId])
+  @@index([app])
+  @@map("app_ownerships")
+}
+
+/// The fixed system roles.
+///
+/// A closed set on purpose: the plan is to start with fixed roles and add a
+/// customizable role editor later. Promoting this to a table is a migration
+/// when that day comes, which is the price of not building an editor nobody
+/// has asked for yet.
+enum Role {
+  owner
+  pm_lead
+  dev_team_leader
+  developer
+  designer
+  viewer
+
+  @@map("role")
+}
 /// An entry in the activity feed.
 ///
 /// Append-only: there is no `updatedAt` and nothing rewrites a row. A
