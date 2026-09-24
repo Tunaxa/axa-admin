@@ -291,6 +291,7 @@ enum Role {
   viewer
 
   @@map("role")
+}
 /// An entry in the activity feed.
 ///
 /// Append-only: there is no `updatedAt` and nothing rewrites a row. A
