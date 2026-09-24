@@ -246,15 +246,42 @@ Guarded and tenant-scoped like everything else, returning `id`, `name` and
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/users` | List everyone in the caller's tenant |
+| `GET` | `/team-members` | The roster: membership, role, user details and app ownerships |
+| `POST` | `/team-members` | Put an existing user on the team |
+| `PATCH` | `/team-members/:id` | Change a member's role |
+| `DELETE` | `/team-members/:id` | Remove someone from the team (`204`) |
+| `GET` | `/users` | List sign-in identities in the caller's tenant |
 
-Guarded by `JwtAuthGuard` and scoped to the token's `org`, like every other
-resource. It returns `id`, `name` and `email` only — `passwordHash` is never
-selected — and is ordered by name.
+All guarded by `JwtAuthGuard` and scoped to the token's `org`, like every other
+resource. `passwordHash` is never selected.
 
-It exists because the issue detail panel needs somewhere to read assignable
-people from. The wider roster work (roles, per-app ownership, capacity, daily
-reports) is still ahead.
+### Behaviour worth knowing
+
+- **Registering does not put anyone on the team.** `POST /auth/register` creates
+  a `User`; membership is granted deliberately through `POST /team-members`. A
+  tenant can therefore have users and an empty roster — which is exactly the
+  state every tenant is in today.
+- **Removing a member does not delete their account.** The `User` survives; the
+  membership goes, and their app ownerships cascade away with it.
+- `role` defaults to `viewer` when omitted on create.
+- Adding someone twice returns **409**. The unique constraint would reject it
+  anyway, but a conflict that explains itself beats a 500.
+- Adding a user from another tenant returns **400**, and a membership in another
+  tenant reads as **404** rather than 403 — the response never confirms that an
+  id exists elsewhere.
+- `PATCH` changes the role and nothing else. Moving a membership to a different
+  person is removing one and adding another, not an edit.
+- The roster is ordered by the member's name, and each row carries its
+  `role x app` ownerships.
+
+### `/users` versus `/team-members`
+
+Both exist and answer different questions. `/users` lists sign-in identities and
+is what the assignee picker reads; `/team-members` is the roster, with roles.
+They will need reconciling once assignment should be limited to people actually
+on the team — a product decision, not a refactor.
+
+Capacity, daily reports and managing app ownerships are still ahead.
 ## Issues API
 
 All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
@@ -352,8 +379,8 @@ backend/
 │   ├── app.service.ts
 │   ├── auth/               # JWT issue/verify, login and register
 │   ├── prisma/             # PrismaService and module
-│   ├── work/               # Issues, projects, workspaces and the activity feed
-│   ├── team/               # Roster listing; roles and reports to follow
+│   ├── work/               # Workspaces API; issues, projects and cycles to follow
+│   ├── team/               # Roster CRUD and the user listing; reports to follow
 │   ├── company/            # Company details, KPI dashboard, goals
 │   ├── docs/               # Living documentation and onboarding
 │   └── requests/           # Account requests and provisioning
