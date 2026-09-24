@@ -275,6 +275,7 @@ model DailyReportIssue {
   @@id([reportId, issueId])
   @@index([issueId])
   @@map("daily_report_issues")
+}
 /// A person's place on the team, and the role they hold by default.
 ///
 /// Deliberately separate from `User`, which is the sign-in identity. Whether
