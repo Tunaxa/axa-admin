@@ -119,9 +119,10 @@ issues are visible, and the board's header says how many are not being shown.
 | Component | File | Contents |
 | --- | --- | --- |
 | `IssueViews` | `components/work/issue-views.tsx` | Owns the issues and the selected view |
-| `ViewToggle` | `components/work/view-toggle.tsx` | Board / List switch |
+| `ViewToggle` | `components/work/view-toggle.tsx` | Board / List / Activity switch |
 | `IssueBoard` | `components/work/issue-board.tsx` | Columns, counts, empty state, drag and drop |
 | `IssueList` | `components/work/issue-list.tsx` | Table of every issue |
+| `ActivityFeed` | `components/work/activity-feed.tsx` | Per-project chronological feed |
 | `IssueDetailPanel` | `components/work/issue-detail-panel.tsx` | Side panel with the three dropdowns |
 | `QuickCreateModal` | `components/work/quick-create-modal.tsx` | Create an issue from a title |
 | `useCreateShortcut` | `components/work/use-create-shortcut.ts` | The `c` key binding and its guards |
@@ -169,6 +170,24 @@ parts of the tree. Rather than letting the palette fetch its own copy of the
 issues, `IssuesProvider` sits above the app shell and both read from it. That
 is why an issue created a moment ago through quick create is immediately
 findable, with no refetch.
+
+### Activity
+
+A third view alongside Board and List: a chronological feed of what happened in
+one project, newest first and grouped by day.
+
+Each event is rendered as a sentence rather than a raw payload — "Rochdi moved
+*Add a test database to CI* from Todo to In Progress" — with actor names and
+issue titles resolved from the data the provider already holds, and statuses
+shown by their labels.
+
+The project picker defaults to the first project. Switching remounts the feed
+via a `key`, so each project starts from a clean loading state instead of an
+effect resetting it.
+
+The feed reads `GET /projects/:id/activity`. With no projects it says so, since
+the feed is scoped to one and there is currently **no way to create a project
+from the UI** — the API exposes only a listing.
 
 ### Quick create
 

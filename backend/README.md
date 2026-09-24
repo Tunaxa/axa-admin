@@ -94,6 +94,7 @@ Four more carry the work itself:
 | `Issue` | `issues` | A unit of work |
 | `Label` | `labels` | A tag applied to issues |
 | `IssueLabel` | `issue_labels` | Join between issues and labels |
+| `ActivityEvent` | `activity_events` | Append-only event log |
 
 `Issue` carries `status`, `priority`, `assigneeId`, its labels, and `app` — the
 AXA application it delivers against. Enums are PostgreSQL types rather than
@@ -106,6 +107,7 @@ strings, so an unknown value is rejected by the database:
 | `IssuePriority` | `issue_priority` | `none`, `low`, `medium`, `high`, `urgent` |
 | `AppKey` | `app_key` | `axa_admin`, `axacrm`, `axapass`, `website` |
 | `Role` | `role` | `owner`, `pm_lead`, `dev_team_leader`, `developer`, `designer`, `viewer` |
+| `ActivityEventType` | `activity_event_type` | `issue_status_changed`, `issue_assigned`, `issue_commented` |
 
 Deletes are chosen per relation rather than uniformly. Removing a tenant
 cascades to everything it owns, but removing an **assignee** or a **project**
@@ -165,6 +167,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
+| `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 
 ## Authentication
 
@@ -315,6 +318,55 @@ Results are ordered by `createdAt` descending.
   project and assignee follow.
 - Omitted fields keep their value; `status` and `priority` fall back to the
   schema defaults (`backlog`, `none`) on create.
+
+## Activity feed
+
+An append-only log of what happened to an issue.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/issues/:id/activity` | The issue's events, newest first |
+| `GET` | `/projects/:id/activity` | The project's events, newest first (capped at 100) |
+| `POST` | `/issues/:id/comments` | Record a comment |
+
+`GET /projects` lists the tenant's projects, which is what the feed's project
+picker reads.
+
+The project feed is scoped through the issue's **current** `projectId` rather
+than a column on the event, so an issue moved between projects takes its
+history with it. Recording the project on each event would instead freeze where
+it happened — a defensible reading, but not the one a project feed is read for.
+
+Events are written by the issues service, in the **same transaction** as the
+change they describe, so the feed cannot end up disagreeing with the issue.
+
+| Type | Recorded when | Payload |
+| --- | --- | --- |
+| `issue_status_changed` | `PATCH` changes `status` | `{ "from": "todo", "to": "in_progress" }` |
+| `issue_assigned` | `PATCH` changes `assigneeId` | `{ "from": null, "to": "<user id>" }` |
+| `issue_commented` | `POST /issues/:id/comments` | `{ "body": "…" }` |
+
+A `PATCH` that sets a field to the value it already has records nothing, and
+fields other than status and assignee are not logged — the feed is a record of
+the decisions worth reading back, not a diff of every column.
+
+### Append-only
+
+There is no `updatedAt` on `activity_events` and nothing rewrites a row. A
+correction is a new event. That is what makes the feed a record of *what
+happened* rather than of what things look like now, and it is the property the
+account-request audit trail will depend on later.
+
+`actorId` is `SetNull` rather than cascading, so an event survives the person
+who caused it leaving. Deleting the **issue** does cascade its events, which
+follows from issues being hard-deletable.
+
+### Comments have no table of their own
+
+A comment is an activity event carrying its text, so comments **cannot be
+edited or deleted**. That is a deliberate floor, not the end state: the data
+model notes an `IssueComment` entity, and when it arrives the event should
+reference the comment by id instead of carrying the body.
 
 ## Structure
 

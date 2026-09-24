@@ -13,12 +13,13 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import type { Issue } from '@prisma/client';
+import type { ActivityEvent, Issue } from '@prisma/client';
 
 import {
   type AuthenticatedRequest,
   JwtAuthGuard,
 } from '../auth/jwt-auth.guard.js';
+import { CreateCommentDto } from './dto/create-comment.dto.js';
 import { CreateIssueDto } from './dto/create-issue.dto.js';
 import { ListIssuesQuery } from './dto/list-issues.query.js';
 import { UpdateIssueDto } from './dto/update-issue.dto.js';
@@ -55,7 +56,30 @@ export class IssuesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateIssueDto,
   ): Promise<Issue> {
-    return this.issues.update(request.user.org, id, dto);
+    return this.issues.update(request.user.org, request.user.sub, id, dto);
+  }
+
+  /** The issue's activity feed, newest first. */
+  @Get(':id/activity')
+  activity(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ActivityEvent[]> {
+    return this.issues.activityFor(request.user.org, id);
+  }
+
+  @Post(':id/comments')
+  comment(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateCommentDto,
+  ): Promise<ActivityEvent> {
+    return this.issues.comment(
+      request.user.org,
+      request.user.sub,
+      id,
+      dto.body,
+    );
   }
 
   @Delete(':id')

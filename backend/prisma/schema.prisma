@@ -32,6 +32,7 @@ model Organization {
   projects      Project[]
   issues        Issue[]
   labels        Label[]
+  activity   ActivityEvent[]
 
   @@map("organizations")
 }
@@ -50,6 +51,7 @@ model Workspace {
   projects     Project[]
   issues       Issue[]
   labels       Label[]
+  activity     ActivityEvent[]
 
   // Slugs are unique per tenant, not globally, so two organizations can both
   // have a "core" workspace.
@@ -76,6 +78,7 @@ model User {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedIssues Issue[]
   teamMember     TeamMember?
+  activity       ActivityEvent[]
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
@@ -139,6 +142,7 @@ model Issue {
   project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
   assignee     User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
   labels       IssueLabel[]
+  activity     ActivityEvent[]
 
   @@index([organizationId])
   @@index([workspaceId])
@@ -287,4 +291,39 @@ enum Role {
   viewer
 
   @@map("role")
+}
+/// An entry in the activity feed.
+///
+/// Append-only: there is no `updatedAt` and nothing rewrites a row. A
+/// correction is a new event, which is what makes the feed usable as a record
+/// of what happened rather than of what things look like now.
+model ActivityEvent {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  workspaceId    String            @db.Uuid
+  issueId        String            @db.Uuid
+  type           ActivityEventType
+  /// The member who caused the event. Null for events raised by automation.
+  actorId        String?           @db.Uuid
+  /// Type-specific detail, e.g. `{ "from": "todo", "to": "in_progress" }`.
+  payload        Json
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  issue        Issue        @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  // The feed is always read for one issue, newest first.
+  @@index([issueId, createdAt])
+  @@map("activity_events")
+}
+
+enum ActivityEventType {
+  issue_status_changed
+  issue_assigned
+  issue_commented
+
+  @@map("activity_event_type")
 }
