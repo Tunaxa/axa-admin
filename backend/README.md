@@ -197,6 +197,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260922032154_add_user_password_hash` | Adds `users.passwordHash` for local authentication |
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
 | `20260923030029_add_daily_reports` | Creates `daily_reports` and `daily_report_issues` |
+| `20260923061342_add_issue_closed_at` | Adds `issues.closedAt` and an index on `(organizationId, closedAt)` |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 
@@ -371,14 +372,25 @@ reach another tenant's issues by guessing ids.
 
 ### Filters
 
-`GET /issues` accepts `assigneeId`, `app` and `priority`. They combine with
-AND, and an unknown enum value is rejected with `400`.
+`GET /issues` accepts `assigneeId`, `app`, `priority`, `closedAfter` and
+`closedBefore`. They combine with AND, and an unknown enum value is rejected
+with `400`.
 
 ```
 GET /issues?app=axacrm&priority=high
+GET /issues?assigneeId=<uuid>&closedAfter=2026-09-22T23:00:00Z&closedBefore=2026-09-23T23:00:00Z
 ```
 
 Results are ordered by `createdAt` descending.
+
+`closedAfter` and `closedBefore` are **instants**, not a calendar day, and the
+window is **half-open** — closed at or after the first, strictly before the
+second. That is deliberate: `closedAt` is a timestamp, and a day only exists in
+some timezone, which the server has no way to know. The client sends the
+boundaries of its own day, and midnight belongs to one day rather than two.
+
+This is the query behind the daily report's *Shipped* prefill: *which issues did
+this person close on this day*.
 
 ### Behaviour worth knowing
 
@@ -392,6 +404,17 @@ Results are ordered by `createdAt` descending.
   project and assignee follow.
 - Omitted fields keep their value; `status` and `priority` fall back to the
   schema defaults (`backlog`, `none`) on create.
+- **`closedAt` is maintained by the service, not sent by the caller.** Moving an
+  issue into `done` sets it; moving it out clears it; re-sending `done` leaves it
+  alone, because it marks the move into `done` rather than the last time someone
+  confirmed the issue was finished. The board's drag-and-drop records it without
+  knowing it exists.
+- `closedAt` is **not** `updatedAt`. Renaming a finished issue moves `updatedAt`
+  and must not move the day the work was delivered, which is the whole reason the
+  column exists.
+- Issues that were already `done` before the column was added have `closedAt`
+  null. Backfilling from `updatedAt` would have invented dates, so they are left
+  unknown and simply do not appear in a closed-on window.
 
 ## Activity feed
 

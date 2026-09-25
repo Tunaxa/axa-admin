@@ -262,6 +262,14 @@ the API stores null, which is how "no blockers" stays distinguishable from
 API takes the date in the path and the column is a calendar date. Future days
 are not selectable.
 
+**Shipped is filled in from the issues you closed that day**, one title per
+line, and the form says so. It happens only when no report exists yet — what
+someone wrote outranks what the board can infer, so an existing report is never
+overwritten. The issues come from `GET /issues?assigneeId=&closedAfter=&closedBefore=`,
+with the day's boundaries computed here because only the browser knows the
+viewer's timezone. If that request fails the field is simply left empty; a
+report must still be fileable when the prefill cannot be built.
+
 Issues come from the shared `IssuesProvider`, so the list matches the board.
 
 ### The timeline
