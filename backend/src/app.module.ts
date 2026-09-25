@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MongooseModule } from '@nestjs/mongoose';
 
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -14,6 +15,21 @@ import { WorkModule } from './work/work.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Docs pages live in MongoDB; everything else is in PostgreSQL. Resolved
+    // asynchronously so the URL is read after ConfigModule has loaded `.env`,
+    // not while this module is being decorated.
+    MongooseModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const uri = config.get<string>('MONGODB_URL');
+
+        if (!uri) {
+          throw new Error('MONGODB_URL is not set');
+        }
+
+        return { uri };
+      },
+    }),
     PrismaModule,
     AuthModule,
     WorkModule,
