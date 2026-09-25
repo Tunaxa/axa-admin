@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { IssueStatus } from '@prisma/client';
-import type { Issue, Prisma } from '@prisma/client';
 import type { ActivityEvent, Issue, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service.js';
