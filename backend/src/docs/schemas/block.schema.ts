@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
+import { stripMongoId } from './strip-mongo-id.js';
+
 /**
  * The kinds of content a page can hold.
  *
@@ -33,7 +35,11 @@ export type BlockType = (typeof BLOCK_TYPES)[number];
  * Mongo gives each block its own `_id`, which is what anchors and links point
  * at. It survives edits to the block's text and every rewrite of the page.
  */
-@Schema({ _id: true, versionKey: false })
+@Schema({
+  _id: true,
+  versionKey: false,
+  toJSON: { virtuals: true, transform: stripMongoId },
+})
 export class Block {
   @Prop({ required: true, enum: BLOCK_TYPES })
   type!: BlockType;
