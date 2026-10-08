@@ -10,13 +10,10 @@ import {
   Patch,
   Post,
   Req,
-  UseGuards,
 } from '@nestjs/common';
 
-import {
-  type AuthenticatedRequest,
-  JwtAuthGuard,
-} from '../auth/jwt-auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { CreateTeamMemberDto } from './dto/create-team-member.dto.js';
 import { UpdateTeamMemberDto } from './dto/update-team-member.dto.js';
 import { type RosterEntry, RosterService } from './roster.service.js';
@@ -26,15 +23,16 @@ import { type RosterEntry, RosterService } from './roster.service.js';
  * route below is scoped to the caller's organization.
  */
 @Controller('team-members')
-@UseGuards(JwtAuthGuard)
 export class RosterController {
   constructor(private readonly roster: RosterService) {}
 
+  @RequirePermissions('team:read')
   @Get()
   list(@Req() request: AuthenticatedRequest): Promise<RosterEntry[]> {
     return this.roster.list(request.user.org);
   }
 
+  @RequirePermissions('team:manage')
   @Post()
   add(
     @Req() request: AuthenticatedRequest,
@@ -43,6 +41,7 @@ export class RosterController {
     return this.roster.add(request.user.org, dto);
   }
 
+  @RequirePermissions('team:manage')
   @Patch(':id')
   updateRole(
     @Req() request: AuthenticatedRequest,
@@ -52,6 +51,7 @@ export class RosterController {
     return this.roster.updateRole(request.user.org, id, dto);
   }
 
+  @RequirePermissions('team:manage')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(

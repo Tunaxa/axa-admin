@@ -11,14 +11,11 @@ import {
   Post,
   Query,
   Req,
-  UseGuards,
 } from '@nestjs/common';
 import type { ActivityEvent, Issue } from '@prisma/client';
 
-import {
-  type AuthenticatedRequest,
-  JwtAuthGuard,
-} from '../auth/jwt-auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { CreateCommentDto } from './dto/create-comment.dto.js';
 import { CreateIssueDto } from './dto/create-issue.dto.js';
 import { ListIssuesQuery } from './dto/list-issues.query.js';
@@ -30,10 +27,10 @@ import { IssuesService } from './issues.service.js';
  * every route below is automatically scoped to the caller's organization.
  */
 @Controller('issues')
-@UseGuards(JwtAuthGuard)
 export class IssuesController {
   constructor(private readonly issues: IssuesService) {}
 
+  @RequirePermissions('work:write')
   @Post()
   create(
     @Req() request: AuthenticatedRequest,
@@ -42,6 +39,7 @@ export class IssuesController {
     return this.issues.create(request.user.org, dto);
   }
 
+  @RequirePermissions('work:read')
   @Get()
   list(
     @Req() request: AuthenticatedRequest,
@@ -50,6 +48,7 @@ export class IssuesController {
     return this.issues.list(request.user.org, query);
   }
 
+  @RequirePermissions('work:write')
   @Patch(':id')
   update(
     @Req() request: AuthenticatedRequest,
@@ -60,6 +59,7 @@ export class IssuesController {
   }
 
   /** The issue's activity feed, newest first. */
+  @RequirePermissions('work:read')
   @Get(':id/activity')
   activity(
     @Req() request: AuthenticatedRequest,
@@ -68,6 +68,7 @@ export class IssuesController {
     return this.issues.activityFor(request.user.org, id);
   }
 
+  @RequirePermissions('work:write')
   @Post(':id/comments')
   comment(
     @Req() request: AuthenticatedRequest,
@@ -82,6 +83,7 @@ export class IssuesController {
     );
   }
 
+  @RequirePermissions('work:delete')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(

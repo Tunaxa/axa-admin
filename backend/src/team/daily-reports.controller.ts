@@ -9,13 +9,10 @@ import {
   Put,
   Query,
   Req,
-  UseGuards,
 } from '@nestjs/common';
 
-import {
-  type AuthenticatedRequest,
-  JwtAuthGuard,
-} from '../auth/jwt-auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { TeamsService } from '../integrations/teams.service.js';
 import {
   type DailyReportView,
@@ -31,13 +28,13 @@ import { SubmitDailyReportDto } from './dto/submit-daily-report.dto.js';
  * tenant comes from the verified token.
  */
 @Controller('daily-reports')
-@UseGuards(JwtAuthGuard)
 export class DailyReportsController {
   constructor(
     private readonly reports: DailyReportsService,
     private readonly teams: TeamsService,
   ) {}
 
+  @RequirePermissions('reports:read')
   @Get()
   list(
     @Req() request: AuthenticatedRequest,
@@ -46,11 +43,6 @@ export class DailyReportsController {
     return this.reports.list(request.user.org, query);
   }
 
-  /**
-   * `PUT` rather than `POST`: there is one report per person per day, so
-   * submitting again is an edit. Idempotent, and the date is explicit rather
-   * than derived from the server's clock.
-   */
   /**
    * Posts the day's digest to Teams.
    *
@@ -62,7 +54,12 @@ export class DailyReportsController {
    * Answers what happened — `{ sent: false, reason }` when there is no webhook
    * configured or the call failed — because unlike the assignment
    * notifications, somebody is waiting on this one.
+   *
+   * Needs `reports:read` rather than `reports:write`: it publishes what is
+   * already there and changes nothing, and a viewer asking for the digest is
+   * not an escalation.
    */
+  @RequirePermissions('reports:read')
   @Post(':date/digest')
   @HttpCode(HttpStatus.OK)
   async sendDigest(
@@ -84,6 +81,12 @@ export class DailyReportsController {
     return { ...result, reports: reports.length };
   }
 
+  /**
+   * `PUT` rather than `POST`: there is one report per person per day, so
+   * submitting again is an edit. Idempotent, and the date is explicit rather
+   * than derived from the server's clock.
+   */
+  @RequirePermissions('reports:write')
   @Put(':date')
   submit(
     @Req() request: AuthenticatedRequest,
