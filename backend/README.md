@@ -617,6 +617,59 @@ edited or deleted**. That is a deliberate floor, not the end state: the data
 model notes an `IssueComment` entity, and when it arrives the event should
 reference the comment by id instead of carrying the body.
 
+## Microsoft Teams notifications
+
+Posts Adaptive Cards to a Teams incoming webhook. Set `TEAMS_WEBHOOK_URL` to
+the channel's webhook; **leave it unset and the integration is off**, not
+broken — development and CI have no webhook, and an API that refused to boot
+without one would be worse than one that stays quiet.
+
+| Notification | Trigger |
+| --- | --- |
+| Issue assigned | `PATCH /issues/:id` changes the assignee to someone |
+| Daily report digest | `POST /daily-reports/:date/digest` |
+| Approvals | **not delivered** — see below |
+
+### Behaviour worth knowing
+
+- **A notification never fails the thing it reports.** Assignment cards are
+  sent in the background and swallow their own errors into the log, so a
+  webhook that is down, slow or misconfigured cannot break an assignment. With
+  a webhook that never answers, the `PATCH` still returned in **144 ms**.
+- **Every call has a 5 second deadline**, so a hanging webhook cannot hold a
+  socket for the life of the process.
+- **The webhook is called after the transaction, never inside it.** Holding a
+  database transaction open across a third party's HTTP call is how someone
+  else's outage becomes your database's problem.
+- **Only a real change notifies.** Re-sending the same assignee, changing
+  another field, or unassigning sends nothing.
+- **User text is escaped.** Teams renders Markdown in a card, so an issue
+  titled `[Reset your password](https://evil.example)` would otherwise arrive
+  in the channel as a working link nobody authored.
+- **The webhook URL is never logged.** It carries a secret; failures log what
+  happened, not where it was sent.
+- **The digest answers honestly.** Unlike the assignment cards, something is
+  waiting on it, so it returns `{ sent, reason?, reports }` — including
+  `{"sent": false, "reason": "TEAMS_WEBHOOK_URL is not set"}`.
+
+### Approvals are not wired up
+
+The task this was built for names three notifications. Two are delivered. The
+third has nothing to fire on: `RequestsModule` is still an empty scaffold, so
+there is no approvable entity, no approval decision and no event to announce.
+Inventing one here would be guessing at the Requests feature's design.
+
+When that module lands, the notification is a card builder beside the two in
+`integrations/teams-cards.ts` and one call from wherever a request is decided.
+
+### One webhook for the whole deployment
+
+`TEAMS_WEBHOOK_URL` is a single environment variable, so **every tenant's
+notifications go to the same channel**. That is correct for one deployment per
+customer and wrong for a shared one, where tenant A's issue titles would appear
+in tenant B's channel. Fixing it means storing a webhook per organization —
+a schema change, and its own task. Do not deploy this multi-tenant until then.
+
 ## Structure
 
 ```
