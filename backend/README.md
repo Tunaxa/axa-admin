@@ -617,6 +617,101 @@ edited or deleted**. That is a deliberate floor, not the end state: the data
 model notes an `IssueComment` entity, and when it arrives the event should
 reference the comment by id instead of carrying the body.
 
+## Permissions
+
+Until now any authenticated member of a tenant could do anything — create,
+edit and delete every issue, page and report. `PermissionsGuard` closes that.
+
+### Declared per route, decided in one place
+
+Routes say what they *are*; `src/auth/permissions.ts` says who may.
+
+```ts
+@RequirePermissions('work:delete')
+@Delete(':id')
+remove(...)
+```
+
+Annotating routes with roles instead would spread policy across every
+controller: deciding that a designer may now delete a page would mean editing
+call sites rather than one table.
+
+| Permission | Covers |
+| --- | --- |
+| `work:read` / `work:write` / `work:delete` | Issues, projects, workspaces, activity |
+| `docs:read` / `docs:write` / `docs:delete` | Documentation pages |
+| `team:read` / `team:manage` | The roster and the user list |
+| `reports:read` / `reports:write` | Daily reports |
+
+| Role | Reads | Writes | Deletes | Manages the roster |
+| --- | --- | --- | --- | --- |
+| `owner` | ✓ | ✓ | ✓ | ✓ |
+| `pm_lead` | ✓ | ✓ | ✓ | ✓ |
+| `dev_team_leader` | ✓ | ✓ | ✓ | — |
+| `developer` | ✓ | ✓ | — | — |
+| `designer` | ✓ | ✓ | — | — |
+| `viewer` | ✓ | — | — | — |
+
+Deleting is kept away from the roles that do the day's work: an issue or a page
+removed by accident takes what it said with it, so deletion sits with the
+people accountable for the record.
+
+### It denies by default
+
+The guard is global, and **a route that declares nothing is refused** — for an
+`owner` as much as anyone. A new endpoint added without a decision about who
+may call it fails in development instead of shipping open, which is how this
+service has been running until now. The refusal is logged with the handler's
+name, because it is a mistake in the code rather than in the request.
+
+Three decorators cover everything:
+
+| Decorator | Means |
+| --- | --- |
+| `@Public()` | No token — registering, logging in, the health check |
+| `@AuthenticatedOnly()` | A valid token and nothing more — only `/auth/me`, which has to work before anyone has a role |
+| `@RequirePermissions(…)` | A valid token and every permission listed |
+
+### The guard runs the token check itself
+
+A global guard runs *before* controller guards, so registering both would mean
+checking permissions before anything had verified the token. `PermissionsGuard`
+calls `JwtAuthGuard` first instead, and `@UseGuards(JwtAuthGuard)` has been
+removed from the controllers — one guard, one place to reason about.
+
+### Bootstrapping an empty tenant
+
+Adding the first member needs `team:manage`, which needs a membership, which
+nobody has. So **while a tenant has no members at all, any account in it may
+create roster entries — and nothing else.** The first `POST /team-members`
+closes the door behind it.
+
+Two consequences, both deliberate and both worth knowing:
+
+- Whoever registers first in an empty tenant can appoint themselves. Seeding an
+  owner at provisioning time would close that, and is the better answer once
+  there is a provisioning step to hang it on.
+- **Removing the last member re-opens it.** Nothing yet stops a roster from
+  being emptied, and an empty roster is a bootstrappable one.
+
+### What this does not do
+
+- **The per-application layer is not enforced.** `AppOwnership` grants a role
+  per application, and the guard ignores it: only `TeamMember.role` decides.
+  Enforcing it needs each route to say which application it concerns, which for
+  `PATCH /issues/:id` means loading the issue before the guard can decide.
+  Treating ownerships as extra permissions in the meantime would have been
+  worse than ignoring them — owning one application would quietly raise your
+  role everywhere.
+- **No ownership of records.** A developer may edit any issue, not only their
+  own, and anyone with `reports:read` reads everybody's daily report. The
+  specification wants reports visible to the appropriate team leader; that is a
+  row-level rule, not a route-level one.
+- **One query per request** to resolve the caller's role. Nothing is cached.
+- **Feature modules still import `AuthModule`** although they no longer use
+  `JwtAuthGuard` directly. Removing those imports touches five module files
+  that open pull requests are also editing, for no change in behaviour.
+
 ## Structure
 
 ```
