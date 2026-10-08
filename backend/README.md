@@ -109,6 +109,12 @@ And two carry daily reports:
 | `DailyReport` | `daily_reports` | One developer's update for one working day |
 | `DailyReportIssue` | `daily_report_issues` | The issues a report refers to |
 
+And one carries application metrics:
+
+| Model | Table | Role |
+| --- | --- | --- |
+| `AppUsageSnapshot` | `app_usage_snapshots` | How one AXA application did over one window |
+
 `Issue` carries `status`, `priority`, `assigneeId`, its labels, and `app` — the
 AXA application it delivers against. Enums are PostgreSQL types rather than
 strings, so an unknown value is rejected by the database:
@@ -204,6 +210,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260922144500_add_project_and_issue_schema` | Creates `projects`, `issues`, `labels`, `issue_labels` and their enums |
 | `20260923030029_add_daily_reports` | Creates `daily_reports` and `daily_report_issues` |
 | `20260923061342_add_issue_closed_at` | Adds `issues.closedAt` and an index on `(organizationId, closedAt)` |
+| `20261008200522_add_app_usage_snapshots` | Creates `app_usage_snapshots` |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 
@@ -352,6 +359,70 @@ true), so a normal boot has it. **An environment where the index is missing
 will silently accept duplicate slugs**, and `/docs/<slug>` then has two answers.
 `autoIndex` is not what production should rely on; applying the indexes as a
 deployment step is a task of its own and has not been done.
+
+## App usage snapshots
+
+`AppUsageSnapshot` records how one AXA application did over one window of time:
+deploys, error rate, signups and MRR.
+
+### The window is stored, not implied
+
+The metrics are of two kinds, and the schema keeps the difference visible:
+
+| Kind | Fields | Meaning |
+| --- | --- | --- |
+| **Counts over the period** | `deploys`, `signups` | How many, between `periodStart` and `periodEnd` |
+| **Levels at a moment** | `errorRate`, `mrr` | What it was, as at `periodEnd` |
+
+A single timestamp cannot say what a count counted. The obvious alternative —
+one `capturedAt` per row, with counts covering the gap to the previous row —
+fails the first time a run is missed: the window silently doubles and every
+count in it is overstated, with nothing in the data to show it happened. So
+`periodStart` and `periodEnd` are stored, and `capturedAt` records *when the
+reading was taken*, which is a different question — a snapshot backfilled next
+week still describes last week.
+
+### One reading per application per window
+
+`@@unique([organizationId, app, periodStart, periodEnd])` makes re-running an
+ingestion an update rather than a duplicate, which a pipeline that can retry
+needs. Windows of different lengths may share a start, so a daily reading and a
+monthly roll-up coexist without fighting.
+
+### Money and rates
+
+`mrr` is `DECIMAL(14,2)`, never a float: binary floating point cannot represent
+`0.10`, and money that does not add up is worse than money that is missing.
+`currency` is an ISO 4217 code, because an amount with no currency is not a sum
+of money. Prisma returns both as `Decimal` objects rather than numbers.
+
+`errorRate` is `DECIMAL(6,5)` — a fraction, so `0.01320` is 1.32%.
+
+### An unmeasured metric is null, not zero
+
+All four metrics are nullable. "No deploys went out" and "nobody measured
+deploys" are different facts, and a chart has to be able to draw a gap rather
+than a false floor. This is the same reasoning that makes `DailyReport.blocked`
+nullable.
+
+### What this schema does not do
+
+- **No ingestion.** Nothing writes a snapshot; there is no collector, no
+  endpoint and no schedule.
+- **`errorRate` cannot be re-aggregated.** Averaging rates across periods or
+  applications is wrong without the request counts behind them, which are not
+  stored — the task names the rate, so the rate is what is kept.
+- **Nothing enforces non-negative counts or a rate within 0–1.** `CHECK`
+  constraints would have to be hand-written into the migration, which Prisma
+  then reports as drift on the next `migrate dev`; the validation belongs in
+  the DTO of whatever writes these.
+- **Nothing enforces `periodEnd > periodStart`**, for the same reason.
+- **Timestamps are `timestamp` rather than `timestamptz`**, matching every
+  other table here. Prisma writes UTC, so the stored data is consistent, but
+  the column type does not enforce it — and a window boundary is the one place
+  on this schema where the zone carries meaning. Worth settling project-wide.
+- **No cost, latency or uptime**, and no per-environment split: a snapshot is
+  about an application, not about production versus staging.
 
 ## Authentication
 
