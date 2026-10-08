@@ -1,18 +1,7 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Put,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, Query, Req } from '@nestjs/common';
 
-import {
-  type AuthenticatedRequest,
-  JwtAuthGuard,
-} from '../auth/jwt-auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import {
   type DailyReportView,
   DailyReportsService,
@@ -27,10 +16,10 @@ import { SubmitDailyReportDto } from './dto/submit-daily-report.dto.js';
  * tenant comes from the verified token.
  */
 @Controller('daily-reports')
-@UseGuards(JwtAuthGuard)
 export class DailyReportsController {
   constructor(private readonly reports: DailyReportsService) {}
 
+  @RequirePermissions('reports:read')
   @Get()
   list(
     @Req() request: AuthenticatedRequest,
@@ -44,6 +33,7 @@ export class DailyReportsController {
    * submitting again is an edit. Idempotent, and the date is explicit rather
    * than derived from the server's clock.
    */
+  @RequirePermissions('reports:write')
   @Put(':date')
   submit(
     @Req() request: AuthenticatedRequest,

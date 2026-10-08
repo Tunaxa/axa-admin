@@ -7,13 +7,10 @@ import {
   Patch,
   Post,
   Req,
-  UseGuards,
 } from '@nestjs/common';
 
-import {
-  type AuthenticatedRequest,
-  JwtAuthGuard,
-} from '../auth/jwt-auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { CreatePageDto } from './dto/create-page.dto.js';
 import { UpdatePageDto } from './dto/update-page.dto.js';
 import { PagesService } from './pages.service.js';
@@ -25,10 +22,10 @@ import { ParseObjectIdPipe } from './parse-object-id.pipe.js';
  * every route below is automatically scoped to the caller's organization.
  */
 @Controller('docs/pages')
-@UseGuards(JwtAuthGuard)
 export class PagesController {
   constructor(private readonly pages: PagesService) {}
 
+  @RequirePermissions('docs:write')
   @Post()
   create(
     @Req() request: AuthenticatedRequest,
@@ -38,12 +35,14 @@ export class PagesController {
   }
 
   /** The tree, without page content. */
+  @RequirePermissions('docs:read')
   @Get()
   list(@Req() request: AuthenticatedRequest): Promise<PageDocument[]> {
     return this.pages.list(request.user.org);
   }
 
   /** One page, with its blocks. */
+  @RequirePermissions('docs:read')
   @Get(':id')
   findOne(
     @Req() request: AuthenticatedRequest,
@@ -52,6 +51,7 @@ export class PagesController {
     return this.pages.findOne(request.user.org, id);
   }
 
+  @RequirePermissions('docs:write')
   @Patch(':id')
   update(
     @Req() request: AuthenticatedRequest,
@@ -68,6 +68,7 @@ export class PagesController {
    * modules use: this call can take a whole section with it, and how much it
    * took is worth saying.
    */
+  @RequirePermissions('docs:delete')
   @Delete(':id')
   remove(
     @Req() request: AuthenticatedRequest,
