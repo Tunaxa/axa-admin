@@ -108,6 +108,7 @@ And two carry daily reports:
 | --- | --- | --- |
 | `DailyReport` | `daily_reports` | One developer's update for one working day |
 | `DailyReportIssue` | `daily_report_issues` | The issues a report refers to |
+| `AccountRequest` | `account_requests` | Somebody asking for an account to be provisioned |
 
 `Issue` carries `status`, `priority`, `assigneeId`, its labels, and `app` — the
 AXA application it delivers against. Enums are PostgreSQL types rather than
@@ -206,6 +207,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260923061342_add_issue_closed_at` | Adds `issues.closedAt` and an index on `(organizationId, closedAt)` |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
+| `20261009234405_add_account_requests` | Creates `account_requests` and its status enum |
 
 ## Docs content schema
 
@@ -764,6 +766,73 @@ Two consequences, both deliberate and both worth knowing:
 - **Feature modules still import `AuthModule`** although they no longer use
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
+
+## Account requests
+
+The provisioning pipeline: somebody asks for an account on an AXA application,
+somebody else decides, and an approval produces a payment link.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/requests` | Raise one |
+| `GET` | `/requests` | The queue, filterable by `status` and `app` |
+| `GET` | `/requests/:id` | One request |
+| `POST` | `/requests/:id/approve` | Approve, and create the checkout session |
+| `POST` | `/requests/:id/reject` | Refuse, with a reason |
+| `POST` | `/requests/:id/needs-more-info` | Send it back for detail |
+
+### Who may do what
+
+Anyone on the team may **raise** one (`requests:write`); everyone can **read**
+the queue (`requests:read`); deciding needs `requests:decide`, which a team
+leader has and a developer does not. Approving creates a payment link, which
+is not a developer's call.
+
+### The session is created before the approval is recorded
+
+This is the ordering that matters. The other way round leaves an **approved
+request with no way to pay** whenever Stripe is unreachable — which looks like
+a finished decision and is not one. A failed attempt leaves the request
+`pending`, so it can simply be approved again.
+
+Verified: with Stripe returning `500`, approving answers `502` and the request
+is **still pending**; retrying once Stripe is back approves it and sets the
+checkout URL.
+
+The request's own id is the Stripe idempotency key, so approving twice returns
+the first session rather than a second one somebody could also pay.
+
+### `needs_more_info` is a status, not a comment
+
+It is still open — but no longer waiting on the approver, which is the whole
+point. "How long does approval take" should count the time an approver
+actually held the request, and a comment cannot express that.
+
+### A decision cannot be taken twice
+
+Approved and rejected are final: a second decision is a `409`, because the
+first one may already have been paid. `needs_more_info` can be decided, since
+coming back is what it is for.
+
+### A rejection needs a reason
+
+`note` is required on reject and needs-more-info. Both become an email
+somebody has to act on, and "no" with nothing attached is not something anyone
+can act on.
+
+### What this does not do
+
+- **Nothing confirms payment.** `paidAt` exists and nothing ever sets it:
+  Stripe reports a completed checkout over a webhook, which is a separate
+  endpoint with its own signature verification. **The pipeline is therefore
+  two-thirds measurable** — raised and decided are real, paid is not.
+- **No email.** Decisions reach Teams, not the requester. The templates are
+  the next task.
+- **No request from outside.** Only a member of the tenant can raise one, so
+  the "gateway" is internal — a customer cannot ask for their own account.
+- **No audit beyond the last decision.** A request sent back twice keeps only
+  the latest note.
+- **No reminders, no SLA, no escalation** on a request left pending.
 
 ## Stripe checkout
 
