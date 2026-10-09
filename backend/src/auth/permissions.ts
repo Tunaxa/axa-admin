@@ -35,6 +35,7 @@ const VIEWER: Permission[] = [
   'docs:read',
   'team:read',
   'reports:read',
+  'requests:read',
 ];
 
 /** Do the work, without reshaping the organisation or destroying its record. */
