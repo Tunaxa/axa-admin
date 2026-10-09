@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { GithubConfig } from './github.config.js';
 import { GithubController } from './github.controller.js';
+import { GithubLinksService } from './github-links.service.js';
 import { GithubOauthService } from './github-oauth.service.js';
 
 /**
@@ -12,7 +13,7 @@ import { GithubOauthService } from './github-oauth.service.js';
  */
 @Module({
   controllers: [GithubController],
-  providers: [GithubConfig, GithubOauthService],
+  providers: [GithubConfig, GithubOauthService, GithubLinksService],
   exports: [GithubConfig],
 })
 export class GithubModule {}
