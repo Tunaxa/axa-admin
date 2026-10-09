@@ -30,6 +30,7 @@ model Organization {
   users         User[]
   teamMembers   TeamMember[]
   appOwnerships AppOwnership[]
+  devProfiles   DevProfile[]
   projects      Project[]
   issues        Issue[]
   labels        Label[]
@@ -303,6 +304,7 @@ model TeamMember {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   ownerships   AppOwnership[]
+  profile      DevProfile?
 
   // One membership per person per tenant.
   @@unique([userId])
