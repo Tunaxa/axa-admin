@@ -117,14 +117,10 @@ export class IssuesService {
       data.closedAt = dto.status === IssueStatus.done ? new Date() : null;
     }
 
-    return this.prisma.issue.update({
-      where: { id },
-      data,
-    })
     // The update and the events it produces go in one transaction: a feed that
     // disagrees with the issue it describes is worse than no feed.
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.issue.update({ where: { id }, data: dto });
+      const updated = await tx.issue.update({ where: { id }, data });
 
       const base = {
         organizationId,
