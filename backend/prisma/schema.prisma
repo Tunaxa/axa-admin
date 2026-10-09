@@ -34,6 +34,7 @@ model Organization {
   issues        Issue[]
   labels        Label[]
   activity   ActivityEvent[]
+  accountRequests AccountRequest[]
 
   @@map("organizations")
 }
@@ -81,6 +82,8 @@ model User {
   dailyReports   DailyReport[]
   teamMember     TeamMember?
   activity       ActivityEvent[]
+  raisedRequests  AccountRequest[] @relation("RaisedRequests")
+  decidedRequests AccountRequest[] @relation("DecidedRequests")
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
@@ -383,4 +386,60 @@ enum ActivityEventType {
   issue_commented
 
   @@map("activity_event_type")
+}
+
+/// Somebody asking for an account to be provisioned on one of the AXA
+/// applications.
+///
+/// The pipeline the KPI dashboard is meant to measure: raised, decided,
+/// paid. Each step records who and when, because "how long does approval
+/// take" is unanswerable from a status alone.
+model AccountRequest {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  /// Which AXA application the account is for.
+  app            AppKey
+  /// Who the account is for. Not a user of this service — that is the point
+  /// of provisioning.
+  requesterEmail String
+  requesterName  String
+  /// Anything the requester wants the approver to know.
+  note           String?
+  /// The member of this tenant who raised it. Null once that account is
+  /// gone: what was asked for, and what was decided, outlives whoever typed
+  /// it, the same way an activity event outlives its actor.
+  raisedById     String?              @db.Uuid
+  status         AccountRequestStatus @default(pending)
+  /// Who decided, and when. Null while it is still pending.
+  decidedById    String?              @db.Uuid
+  decidedAt      DateTime?
+  /// Why it was rejected, or what else is needed. The text an email will
+  /// carry, which is why it is kept rather than just logged.
+  decisionNote   String?
+  /// The Stripe session created on approval, and where it sends the customer.
+  checkoutSessionId String?
+  checkoutUrl       String?
+  /// When payment was confirmed. Null until something confirms it — which
+  /// nothing does yet; see the README.
+  paidAt         DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  raisedBy     User?        @relation("RaisedRequests", fields: [raisedById], references: [id], onDelete: SetNull)
+  decidedBy    User?        @relation("DecidedRequests", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  // The queue: one tenant's pending requests, oldest first.
+  @@index([organizationId, status, createdAt])
+  @@map("account_requests")
+}
+
+enum AccountRequestStatus {
+  pending
+  approved
+  rejected
+  /// Sent back for more detail. Still open, but not waiting on the approver.
+  needs_more_info
+
+  @@map("account_request_status")
 }
