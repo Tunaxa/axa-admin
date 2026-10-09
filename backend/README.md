@@ -206,6 +206,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260923061342_add_issue_closed_at` | Adds `issues.closedAt` and an index on `(organizationId, closedAt)` |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
+| `20261009231500_add_issue_key` | Adds `issues.key` with a backfill, and the tenant's prefix and counter |
 
 ## Docs content schema
 
@@ -764,6 +765,75 @@ Two consequences, both deliberate and both worth knowing:
 - **Feature modules still import `AuthModule`** although they no longer use
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
+
+## Issue keys
+
+Every issue carries a human-readable reference — `AXA-123` — alongside its
+UUID. A branch name, a pull request title or a person in a meeting can say the
+first; none of them can say the second, which is why linking a branch to an
+issue needs the key to exist at all.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/issues/resolve?text=…` | The issues a branch name or PR title refers to |
+| `GET` | `/issues/resolve?key=…` | One issue by its key |
+
+### The prefix is per tenant
+
+`Organization.issuePrefix` (default `AXA`) and `Organization.issueCounter`.
+Per tenant rather than per project, because the branch names this has to match
+carry one prefix, and a second would make `feat/AXA-123-...` ambiguous the
+moment two projects both had an issue 123.
+
+Two tenants may each hold `AXA-1`; the unique index is on
+`(organizationId, key)`.
+
+### Allocating a key cannot race
+
+The counter is bumped with an atomic increment inside the same transaction
+that creates the issue. The row lock that takes is what stops two simultaneous
+creates both being handed `AXA-124` — eight concurrent creates produced eight
+distinct keys.
+
+### Parsing requires the prefix, and that is the point
+
+Matching anything shaped like `WORD-123` turns `fix/retry-3-times` into a
+reference to `RETRY-3`, and `feat/add-2-buttons` into `ADD-2`. Both look
+plausible in a log, and neither would be noticed until somebody's pull request
+was linked to a stranger's issue. So the parser takes the tenant's prefix and
+matches only that.
+
+| Branch | Resolves to |
+| --- | --- |
+| `feat/AXA-2-parse-branch-names` | `AXA-2` |
+| `feat/axa-2-lower-case` | `AXA-2` |
+| `fix/AXA-1-and-AXA-3-together` | `AXA-1`, `AXA-3` |
+| `feat/AXA-002-leading-zeros` | `AXA-2` |
+| `fix/retry-3-times` | nothing |
+| `feat/add-2-buttons` | nothing |
+| `feat/CRM-1-…` (another tenant's prefix) | nothing |
+
+Case-insensitive, because branch names are not usually shouted. Leading zeros
+are normalised, or `AXA-007` and `AXA-7` would be two references to one issue.
+
+### `?key=` and `?text=` fail differently
+
+A key that does not parse is a **400** — `banana` is not a missing issue, it is
+not a key. A key that parses but matches nothing is a **404**. With `?text=`,
+keys that match nothing are dropped silently instead: a branch may mention an
+issue from before this tenant's history, and that is not an error anybody can
+act on.
+
+### What this does not do
+
+- **Nothing records the link.** Resolving answers a question; storing "this
+  pull request belongs to AXA-123" is the webhook receiver's job.
+- **The prefix cannot be changed through the API**, and changing it in the
+  database would leave existing keys on the old one.
+- **Numbers are never reused.** A deleted issue's key is gone, which is right,
+  but it also means the counter only grows.
+- **`AXA-12x` resolves to `AXA-12`.** A letter straight after the number is
+  treated as slug text, the same way `AXA-123-wire` is.
 
 ## GitHub
 
