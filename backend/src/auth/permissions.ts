@@ -19,6 +19,10 @@ export const PERMISSIONS = [
   'team:manage',
   'reports:read',
   'reports:write',
+  'requests:read',
+  'requests:write',
+  'requests:decide',
+  'billing:manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -39,6 +43,9 @@ const CONTRIBUTOR: Permission[] = [
   'work:write',
   'docs:write',
   'reports:write',
+  // Anyone on the team may ask for an account to be provisioned; deciding on
+  // the request is a different matter, and so is paying for it.
+  'requests:write',
 ];
 
 /**
@@ -52,7 +59,14 @@ const CONTRIBUTOR: Permission[] = [
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.owner]: EVERY_PERMISSION,
   [Role.pm_lead]: EVERY_PERMISSION,
-  [Role.dev_team_leader]: [...CONTRIBUTOR, 'work:delete', 'docs:delete'],
+  [Role.dev_team_leader]: [
+    ...CONTRIBUTOR,
+    'work:delete',
+    'docs:delete',
+    // A team leader decides on requests from their team, but does not hold
+    // the company card: approving creates a payment link, it does not pay.
+    'requests:decide',
+  ],
   [Role.developer]: CONTRIBUTOR,
   [Role.designer]: CONTRIBUTOR,
   [Role.viewer]: VIEWER,

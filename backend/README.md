@@ -765,6 +765,87 @@ Two consequences, both deliberate and both worth knowing:
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
 
+## Stripe checkout
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/billing/checkout-sessions` | Create a Stripe Checkout Session and return its URL |
+
+```json
+{ "app": "axacrm", "priceId": "price_1Pabc123",
+  "customerEmail": "client@example.com", "referenceId": "req-4821",
+  "mode": "subscription", "quantity": 1 }
+```
+```json
+{ "id": "cs_test_…", "url": "https://checkout.stripe.com/c/pay/cs_test_…",
+  "mode": "subscription", "expiresAt": "2026-10-09T20:24:13.000Z" }
+```
+
+### No card details ever reach this service
+
+Checkout is hosted by Stripe. This creates a session and hands back a URL; the
+customer enters their card on Stripe's page. Nothing in this codebase handles a
+card number, and nothing here is in scope for it.
+
+### The return URLs are configuration, not input
+
+`success_url` and `cancel_url` come from `STRIPE_SUCCESS_URL` and
+`STRIPE_CANCEL_URL`. Letting a caller choose them would make this an open
+redirect that **Stripe itself** walks the customer through, which is a far more
+convincing one than an ordinary redirect bug. The global validation whitelist
+rejects the fields outright.
+
+### Approving twice cannot charge twice
+
+The idempotency key is derived from the tenant and the `referenceId`, so a
+retried approval returns the *first* session rather than creating a second one
+somebody could also pay. `referenceId` also becomes the session's
+`client_reference_id`. Stripe keeps idempotency keys for 24 hours; after that
+the same reference would create a new session.
+
+`organizationId`, `app`, `referenceId` and the approver's id are written to the
+session's metadata, so whatever handles the payment webhook later can attribute
+it without guessing.
+
+### Unconfigured is an error, not silence
+
+Without `STRIPE_SECRET_KEY` the routes answer **503** and nothing reaches
+Stripe. This is deliberately the opposite of the Teams integration: a missed
+notification costs nothing, a checkout session nobody can get means somebody
+cannot pay.
+
+### What the caller is told, and what they are not
+
+| Situation | Answer |
+| --- | --- |
+| A price Stripe does not have | **400**, with Stripe's own message |
+| Stripe rejects our API key | **503** "Billing is not configured" — logged, never echoed |
+| Stripe rate limits us | **503** "try again" |
+| Stripe does not answer | **504** |
+| Anything else from Stripe | **502** |
+
+A bad price is the caller's problem. A rejected key is ours, and must not be
+reported as though the request were wrong. The secret key is never logged.
+
+One attempt waits 5 seconds and one retry is allowed, so **the longest a caller
+waits is about ten seconds**. Retrying is safe because every create carries an
+idempotency key.
+
+### It is not wired to an approval yet
+
+The task this was built for says *on approval*. `RequestsModule` is still an
+empty scaffold — there is no approvable entity — so the route takes a
+`referenceId` for whatever is being approved and `StripeService` is exported
+for direct use. When the Requests module lands, approving calls
+`createCheckoutSession` with the request's id and nothing here changes.
+
+### Still missing: the webhook
+
+**Nothing records that a payment succeeded.** Stripe reports that over a
+webhook, which is a separate endpoint with its own signature verification —
+and without it a session can be paid and this service will never know. Do not
+treat this as a finished billing flow.
+
 ## Structure
 
 ```
