@@ -25,15 +25,16 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  dailyReports DailyReport[]
+  dailyReports  DailyReport[]
   workspaces    Workspace[]
   users         User[]
   teamMembers   TeamMember[]
   appOwnerships AppOwnership[]
+  devProfiles   DevProfile[]
   projects      Project[]
   issues        Issue[]
   labels        Label[]
-  activity   ActivityEvent[]
+  activity      ActivityEvent[]
 
   @@map("organizations")
 }
@@ -48,7 +49,7 @@ model Workspace {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projects     Project[]
   issues       Issue[]
   labels       Label[]
@@ -76,7 +77,7 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedIssues Issue[]
   dailyReports   DailyReport[]
   teamMember     TeamMember?
@@ -282,6 +283,7 @@ model DailyReportIssue {
   @@index([issueId])
   @@map("daily_report_issues")
 }
+
 /// A person's place on the team, and the role they hold by default.
 ///
 /// Deliberately separate from `User`, which is the sign-in identity. Whether
@@ -301,6 +303,7 @@ model TeamMember {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   ownerships   AppOwnership[]
+  profile      DevProfile?
 
   // One membership per person per tenant.
   @@unique([userId])
@@ -349,6 +352,7 @@ enum Role {
 
   @@map("role")
 }
+
 /// An entry in the activity feed.
 ///
 /// Append-only: there is no `updatedAt` and nothing rewrites a row. A
@@ -383,4 +387,43 @@ enum ActivityEventType {
   issue_commented
 
   @@map("activity_event_type")
+}
+
+/// What one member of the team works in, owns, and can be reached on.
+///
+/// Hangs off `TeamMember` rather than `User`, like `AppOwnership` does: a
+/// profile describes somebody's place on a team, and it stops meaning anything
+/// when they leave it. The cost is that removing and re-adding someone loses
+/// what they wrote — acceptable for a description, which is why the daily
+/// reports went the other way and point at `User` instead.
+model DevProfile {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  teamMemberId   String   @unique @db.Uuid
+  /// Technologies this person works in, normalised to lower case by the API so
+  /// that `React`, `react` and ` react ` do not become three skills.
+  stack          String[]
+  /// The part of the product they answer for, in their own words.
+  ///
+  /// Prose, deliberately: `AppOwnership` already says which applications
+  /// someone holds a role in, and that is a different question from "who do I
+  /// ask about provisioning". A controlled vocabulary here would need a list
+  /// nobody has agreed on yet.
+  ownershipArea  String?
+  /// Where to reach them beyond the email on their account.
+  slackHandle    String?
+  githubHandle   String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMember   TeamMember   @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+
+  // The directory is always read for one tenant.
+  @@index([organizationId])
+  // "Who here writes Go" — a scalar list needs an inverted index to be
+  // searchable at all; a b-tree on an array cannot answer containment.
+  @@index([stack], type: Gin)
+  @@map("dev_profiles")
 }
