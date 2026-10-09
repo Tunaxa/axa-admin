@@ -108,6 +108,7 @@ And two carry daily reports:
 | --- | --- | --- |
 | `DailyReport` | `daily_reports` | One developer's update for one working day |
 | `DailyReportIssue` | `daily_report_issues` | The issues a report refers to |
+| `DevProfile` | `dev_profiles` | What one member works in, owns, and can be reached on |
 
 And one carries application metrics:
 
@@ -213,6 +214,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20261008200522_add_app_usage_snapshots` | Creates `app_usage_snapshots` |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
+| `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
 
 ## Docs content schema
 
@@ -779,6 +781,77 @@ true), so a normal boot has it. **An environment where the index is missing
 will silently accept duplicate slugs**, and `/docs/<slug>` then has two answers.
 `autoIndex` is not what production should rely on; applying the indexes as a
 deployment step is a task of its own and has not been done.
+
+## Dev profiles
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/dev-profiles` | The directory, filterable by `?stack=` |
+| `GET` | `/dev-profiles/:teamMemberId` | One profile |
+| `PUT` | `/dev-profiles/:teamMemberId` | Create or replace **your own** |
+
+A profile carries a `stack`, an `ownershipArea` and contact handles, and is
+addressed by team member id because that is what it belongs to.
+
+### It hangs off `TeamMember`, not `User`
+
+Like `AppOwnership`. A profile describes somebody's place on a team and stops
+meaning anything when they leave it, so removing them from the roster takes it
+with them. The cost is that re-adding someone loses what they wrote, which is
+acceptable for a description — and is exactly why the daily reports went the
+other way and point at `User`: a work log must outlive a roster change, a
+self-description need not.
+
+### `ownershipArea` is prose, deliberately
+
+`AppOwnership` already records which applications somebody holds a role in.
+That is a different question from *who do I ask about provisioning*, which is
+what this field answers. A controlled vocabulary would need a list of areas
+nobody has agreed on.
+
+### The stack is normalised, not validated
+
+Entries are trimmed, lower-cased and de-duplicated on write, so `React`,
+`react` and `  react ` do not become three skills and the filter finds all of
+them. There is no list of allowed technologies — free text is the right shape
+here — but without normalising, the field would be unsearchable within a month.
+
+### `PUT` replaces
+
+Anything left out is cleared, including the contact handles. A client loads the
+profile before saving it, the same contract the daily report form works to.
+
+### A note on the GIN index
+
+`stack` carries a GIN index, because a b-tree cannot answer array containment
+at all: `WHERE stack @> ARRAY['go']` has no other structure to use.
+
+Measured at 5,000 profiles, the planner **chooses a sequential scan anyway** —
+the whole table is 1.5 MB across 193 pages, so reading it is cheaper than
+consulting the index. With `enable_seqscan` off it does use it:
+
+```
+Bitmap Heap Scan on dev_profiles
+  ->  Bitmap Index Scan on dev_profiles_stack_idx
+        Index Cond: (stack @> '{go}'::text[])
+```
+
+So the index works and is not yet earning its keep. It stays because it is the
+only structure that *can* serve the query as the directory grows, and adding it
+with the table costs nothing next to adding it to a live one.
+
+### What this does not do
+
+- **Nobody can edit somebody else's profile**, not even an owner. A profile is
+  self-authored, and "a leader may also fix yours" is a per-record rule while
+  the permission guard decides per route.
+- **No delete.** A `PUT` with no fields empties a profile; removing it entirely
+  means removing the member.
+- **No avatar, no bio, no working hours, no timezone.**
+- **`phone` is personal data** in the same table as everything else, with no
+  separate handling and no way to hide it from other members.
+- **No search across `ownershipArea`**, the field most likely to be searched in
+  prose. That wants full text, not an array index.
 
 ## Authentication
 
