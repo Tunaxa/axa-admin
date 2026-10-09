@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
 import { CompanyModule } from './company/company.module.js';
 import { DocsModule } from './docs/docs.module.js';
+import { GithubModule } from './github/github.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RequestsModule } from './requests/requests.module.js';
 import { TeamModule } from './team/team.module.js';
@@ -38,6 +39,7 @@ import { WorkModule } from './work/work.module.js';
     TeamModule,
     CompanyModule,
     DocsModule,
+    GithubModule,
     RequestsModule,
   ],
   controllers: [AppController],

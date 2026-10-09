@@ -4,7 +4,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    // GitHub signs the raw request body. Re-serialising the parsed JSON would
+    // not reproduce the bytes it hashed — key order and whitespace both
+    // matter — so the buffer has to be kept.
+    rawBody: true,
+  });
 
   // The frontend is served from a different origin, so the browser will not
   // let it call this API without an explicit allowance. Origins are listed
