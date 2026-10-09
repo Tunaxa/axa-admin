@@ -1345,6 +1345,85 @@ Two consequences, both deliberate and both worth knowing:
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
 
+## GitHub
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/github/oauth/authorize` | Redirects to GitHub to approve the application |
+| `GET` | `/github/oauth/callback` | Where GitHub sends the browser back |
+| `POST` | `/github/webhook` | Where GitHub posts events |
+
+### What has to be registered by hand
+
+This part is not code. In GitHub, under **Settings → Developer settings → OAuth Apps → New OAuth App**:
+
+| Field | Value |
+| --- | --- |
+| Application name | AXA Admin |
+| Homepage URL | the frontend's origin, e.g. `http://localhost:3000` |
+| Authorization callback URL | `<api origin>/github/oauth/callback` |
+
+That gives a **Client ID** and lets you generate a **Client secret** — they go
+into `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and the callback URL has to
+be repeated in `GITHUB_CALLBACK_URL` because GitHub checks that the two match.
+
+Then, on the repository, under **Settings → Webhooks → Add webhook**:
+
+| Field | Value |
+| --- | --- |
+| Payload URL | `<api origin>/github/webhook` |
+| Content type | `application/json` |
+| Secret | a long random string, also set as `GITHUB_WEBHOOK_SECRET` |
+| Events | Issues, Pull requests |
+
+The API has to be reachable from the internet for deliveries to arrive; during
+development that means a tunnel.
+
+### The signature is over the raw body
+
+GitHub signs the **bytes** it sent and puts the result in
+`X-Hub-Signature-256`. Re-serialising the parsed JSON would not reproduce them
+— key order and whitespace both matter — so the application is created with
+`rawBody: true` and the check runs against the buffer. A delivery with unusual
+whitespace, correctly signed, is accepted; the same body re-signed after a
+one-word edit is refused.
+
+The comparison is timing-safe. Comparing with `===` leaks, through how long it
+takes to fail, how much of a guessed signature was right.
+
+**With no `GITHUB_WEBHOOK_SECRET`, every delivery is refused.** An unsigned
+webhook endpoint is an open door for anyone who learns the URL, so the failure
+mode is "nothing gets in" rather than "everything does".
+
+### `state` is signed, not stored
+
+CSRF protection on the OAuth flow needs the callback to prove it belongs to a
+flow this service started. The usual answer is a session or Redis; neither
+exists yet. Instead `state` is `<nonce>.<expiry>.<hmac>` — unguessable,
+self-expiring after ten minutes, and nothing to keep. A forged or expired one
+is a `401`.
+
+### Scopes
+
+`read:user repo:status`, not `repo`. `repo` would grant **write access to
+code**, which an admin tool that reads pull requests has no business holding.
+
+### What this does not do
+
+- **Nothing is persisted.** The callback exchanges the code, reads the account
+  and answers with it — the access token is then dropped. Keeping it needs two
+  decisions nobody has made: where it belongs (per user or per organization)
+  and how it is encrypted at rest. Storing OAuth tokens in plaintext would be
+  worse than not storing them.
+- **Nothing acts on the events.** The webhook verifies, logs and returns `202`.
+  Parsing branch names and reacting to issue and pull request events are the
+  next two tasks.
+- **No replay protection.** A delivery captured and re-sent is still correctly
+  signed. GitHub's `X-GitHub-Delivery` id is what deduplication would key on,
+  and that needs somewhere to remember ids.
+- **No `X-GitHub-Hook-Installation-Target-ID` check**, so any repository
+  configured with the secret is accepted.
+
 ## Structure
 
 ```
