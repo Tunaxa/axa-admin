@@ -22,6 +22,15 @@ model Organization {
   id        String   @id @default(uuid()) @db.Uuid
   slug      String   @unique
   name      String
+  /// The letters in front of an issue key, as in `AXA-123`.
+  ///
+  /// Per tenant rather than per project: the branch names this has to match
+  /// carry one prefix, and a second one would make `feat/AXA-123-...`
+  /// ambiguous the moment two projects both had an issue 123.
+  issuePrefix  String @default("AXA")
+  /// The last number handed out. Incremented inside the transaction that
+  /// creates an issue, so the row lock serialises concurrent creates.
+  issueCounter Int    @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -125,6 +134,12 @@ model Issue {
   id             String        @id @default(uuid()) @db.Uuid
   organizationId String        @db.Uuid
   workspaceId    String        @db.Uuid
+  /// The human-readable reference, as in `AXA-123`.
+  ///
+  /// What a branch name, a pull request title or a person in a meeting can
+  /// actually say. A UUID cannot be any of those, which is why linking a
+  /// branch to an issue needs this to exist at all.
+  key            String
   /// Null while an issue sits in the workspace backlog, unattached to a project.
   projectId      String?       @db.Uuid
   title          String
@@ -155,6 +170,8 @@ model Issue {
   @@index([workspaceId])
   @@index([projectId])
   @@index([assigneeId])
+  // One `AXA-123` per tenant, and the lookup a branch name resolves through.
+  @@unique([organizationId, key])
   // Board and list views read one workspace filtered by status constantly.
   @@index([workspaceId, status])
   // "What did this person close on this day" — the daily report prefill.
