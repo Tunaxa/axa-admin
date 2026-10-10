@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { IntegrationsModule } from '../integrations/integrations.module.js';
 import { ActivityService } from './activity.service.js';
 import { IssuesController } from './issues.controller.js';
 import { IssuesService } from './issues.service.js';
@@ -16,7 +17,7 @@ import { WorkspacesService } from './workspaces.service.js';
  * Projects and cycles arrive with their own tasks.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, IntegrationsModule],
   controllers: [IssuesController, ProjectsController, WorkspacesController],
   providers: [
     IssuesService,

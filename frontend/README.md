@@ -40,6 +40,7 @@ frontend/
 │   │   └── globals.css      # Tailwind entry and shadcn/ui theme
 │   ├── components/
 │   │   ├── layout/          # App shell: sidebar, top bar, command palette
+│   │   ├── docs/            # Two-pane documentation reader
 │   │   ├── team/            # Daily report form
 │   │   ├── work/            # Issue board and list views
 │   │   └── ui/              # shadcn/ui primitives
@@ -318,6 +319,59 @@ so nothing depends on colour alone.
 
 An empty roster says why: registering creates a user account, and membership is
 granted separately.
+
+## Docs
+
+`/docs` is the documentation reader: the page tree on the left, the selected
+page rendered on the right.
+
+| Component | File | Contents |
+| --- | --- | --- |
+| `DocsView` | `components/docs/docs-view.tsx` | The two panes and the selection |
+| `PageTreeNav` | `components/docs/page-tree.tsx` | The tree, expand and collapse |
+| `PageContent` | `components/docs/page-content.tsx` | The rendered page |
+| `blocksToMarkdown` | `components/docs/blocks-to-markdown.ts` | Blocks → one Markdown document |
+| `docs-api.ts` | `components/docs/docs-api.ts` | `/docs/pages` reads |
+
+**The tree is one request, the content is one more.** `GET /docs/pages` returns
+every node without its blocks, which is what a sidebar needs; a page's content
+is fetched only when it is opened. That split is why the API has two shapes.
+
+### Why the content goes through Markdown
+
+Blocks are serialised into a single Markdown document and rendered once, rather
+than each block type mapping straight to an element. That is what makes inline
+formatting work: a paragraph's text can hold `**bold**`, a link or a code span,
+and one renderer handles all of it instead of every block type growing its own
+parser.
+
+Two cases the serialiser has to get right:
+
+- **Consecutive list items stay on adjacent lines.** Separated by blank lines,
+  Markdown reads each one as its own list and the spacing falls apart.
+- **A code block is fenced with more backticks than it contains.** A snippet
+  that shows a Markdown fence would otherwise close the block early and spill
+  the rest of the page into the document as markup.
+
+Numbered items are always written as `1.`; Markdown numbers the rendered list
+itself, so inserting an item in the middle cannot leave the rest counting wrong.
+
+### Page content is not trusted
+
+`react-markdown` does not render raw HTML unless `rehype-raw` is added, and it
+deliberately is not. `<img src=x onerror=…>` in a block's text is displayed as
+text. Element styling is passed to the renderer rather than applied with a
+typography plugin, so the only elements that can appear are the ones listed in
+`page-content.tsx`.
+
+### Reaching the page
+
+The route is `/docs`. It is **not linked from the sidebar yet**: `nav-items.ts`
+says links are added by the tasks that create the routes, but giving an item an
+`href` also means changing the `NavItem` shape and how the sidebar and command
+palette render — shared files that other open branches are editing. That is the
+conflict class that broke `dev`, so the one-line link is left for whoever lands
+these chains.
 
 ## Adding shadcn/ui components
 
