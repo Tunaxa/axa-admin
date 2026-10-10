@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
+import { PermissionsGuard } from './auth/permissions.guard.js';
+import { BillingModule } from './billing/billing.module.js';
 import { CompanyModule } from './company/company.module.js';
 import { DocsModule } from './docs/docs.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -32,6 +35,7 @@ import { WorkModule } from './work/work.module.js';
     }),
     PrismaModule,
     AuthModule,
+    BillingModule,
     WorkModule,
     TeamModule,
     CompanyModule,
@@ -39,6 +43,11 @@ import { WorkModule } from './work/work.module.js';
     RequestsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Global, so a route cannot be added without a decision about who may call
+    // it: anything that declares nothing is refused.
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+  ],
 })
 export class AppModule {}

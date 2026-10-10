@@ -6,6 +6,7 @@ import {
 import { IssueStatus } from '@prisma/client';
 import type { ActivityEvent, Issue, Prisma } from '@prisma/client';
 
+import { TeamsService } from '../integrations/teams.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityService } from './activity.service.js';
 import type { CreateIssueDto } from './dto/create-issue.dto.js';
@@ -24,6 +25,7 @@ export class IssuesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activity: ActivityService,
+    private readonly teams: TeamsService,
   ) {}
 
   async create(organizationId: string, dto: CreateIssueDto): Promise<Issue> {
@@ -107,7 +109,15 @@ export class IssuesService {
       );
     }
 
-    const data: Prisma.IssueUncheckedUpdateInput = { ...dto };
+    var data: Prisma.IssueUncheckedUpdateInput = { ...dto };
+
+    // `closedAt` is maintained here rather than by the caller, so the board's
+    // drag-and-drop and the detail panel record it without knowing about it.
+    // Re-sending the same status leaves it alone: it marks the move into
+    // `done`, not the last time someone confirmed the issue was done.
+    if (dto.status && dto.status !== issue.status) {
+      data.closedAt = dto.status === IssueStatus.done ? new Date() : null;
+    }
 
     // `closedAt` is maintained here rather than by the caller, so the board's
     // drag-and-drop and the detail panel record it without knowing about it.
@@ -119,7 +129,7 @@ export class IssuesService {
 
     // The update and the events it produces go in one transaction: a feed that
     // disagrees with the issue it describes is worse than no feed.
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.issue.update({ where: { id }, data });
 
       const base = {
@@ -153,6 +163,59 @@ export class IssuesService {
 
       return updated;
     });
+
+    // After the transaction, never inside it: a webhook is a network call, and
+    // holding a database transaction open across one is how a slow third party
+    // becomes a database problem.
+    if (
+      dto.assigneeId !== undefined &&
+      dto.assigneeId !== null &&
+      dto.assigneeId !== issue.assigneeId
+    ) {
+      await this.announceAssignment(organizationId, actorId, updated);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Tells Teams an issue changed hands.
+   *
+   * Reads the two names the card needs and hands over a finished payload, so
+   * the integration stays a transport that knows nothing about this schema.
+   * Its own failures are swallowed there; the lookup's are swallowed here, for
+   * the same reason — an assignment that worked must not report an error.
+   */
+  private async announceAssignment(
+    organizationId: string,
+    actorId: string,
+    issue: Issue,
+  ): Promise<void> {
+    if (!this.teams.enabled || !issue.assigneeId) {
+      return;
+    }
+
+    try {
+      const people = await this.prisma.user.findMany({
+        where: { organizationId, id: { in: [actorId, issue.assigneeId] } },
+        select: { id: true, name: true },
+      });
+
+      const nameOf = (id: string) =>
+        people.find((person) => person.id === id)?.name ?? 'Someone';
+
+      this.teams.notifyIssueAssigned({
+        issueTitle: issue.title,
+        assigneeName: nameOf(issue.assigneeId),
+        actorName: nameOf(actorId),
+        status: issue.status,
+        priority: issue.priority,
+        app: issue.app,
+      });
+    } catch {
+      // Already logged by Nest's exception layer if it matters; what must not
+      // happen is this failing the update that has already been committed.
+    }
   }
 
   /**
