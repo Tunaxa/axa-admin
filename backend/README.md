@@ -216,6 +216,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 | `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
 | `20261009231500_add_issue_key` | Adds `issues.key` with a backfill, and the tenant's prefix and counter |
+| `20261009231630_add_github_links` | Creates `github_repositories` and `github_links` |
 
 ## Docs content schema
 
@@ -1478,16 +1479,60 @@ is a `401`.
 `read:user repo:status`, not `repo`. `repo` would grant **write access to
 code**, which an admin tool that reads pull requests has no business holding.
 
+### Receiving events
+
+The webhook reads `pull_request` and `issues` deliveries, finds the issue keys
+in the branch name, the title and the body, and records a link.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/github/repositories` | Which repositories this tenant has connected |
+| `POST` | `/github/repositories` | Connect one |
+| `DELETE` | `/github/repositories/:owner/:name` | Disconnect it |
+| `GET` | `/github/links?issueKey=AXA-1` | What GitHub objects refer to an issue |
+
+**A delivery names a repository and nothing else** — no organization, no
+account, nothing that says who it is for. `github_repositories` is what
+answers that. A repository is claimed **globally**, not per tenant: if two
+tenants held the same one, a delivery would have no way to choose.
+
+**Everything unusable answers `202`, not an error.** An unconnected
+repository, an event this service does not read, a branch naming no issue —
+none of them are failures GitHub can act on, and a non-2xx only buys a
+redelivery of exactly the same thing. The response says what happened:
+
+```json
+{ "received": true, "handled": false, "reason": "no issue key in the branch, title or body", "linked": [] }
+```
+
+**Links are upserted.** GitHub sends an event per action on the same object
+and redelivers on failure, so a second `opened` must not create a second row
+and a later `closed` has to land on the first one. Verified: two identical
+deliveries leave one row, and a merge updates it in place.
+
+**A merged pull request is `merged`, not `closed`.** GitHub reports it as
+closed with a separate flag; collapsing the two would lose the only
+distinction anybody cares about.
+
+**Pull requests arriving through the `issues` event are dropped.** GitHub
+sends them both ways, and the `issues` copy has no branch — taking it would
+create a second, worse link for the same object.
+
 ### What this does not do
 
-- **Nothing is persisted.** The callback exchanges the code, reads the account
-  and answers with it — the access token is then dropped. Keeping it needs two
+- **Nothing is persisted from OAuth.** The callback exchanges the code, reads
+  the account and answers with it — the access token is then dropped. Keeping it needs two
   decisions nobody has made: where it belongs (per user or per organization)
   and how it is encrypted at rest. Storing OAuth tokens in plaintext would be
   worse than not storing them.
 - **Nothing acts on the events.** The webhook verifies, logs and returns `202`.
   Parsing branch names and reacting to issue and pull request events are the
   next two tasks.
+- **Nothing acts on a link.** A merged pull request does not move its issue to
+  done, and no activity event is written. Both are tempting and both are
+  automation decisions rather than receiving.
+- **Keys are read from the branch, title and body only** — not from commit
+  messages, which are not in the payload, and not from review comments.
 - **No replay protection.** A delivery captured and re-sent is still correctly
   signed. GitHub's `X-GitHub-Delivery` id is what deduplication would key on,
   and that needs somewhere to remember ids.

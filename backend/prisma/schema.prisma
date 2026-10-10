@@ -45,6 +45,8 @@ model Organization {
   labels        Label[]
   activity      ActivityEvent[]
   appUsage      AppUsageSnapshot[]
+  githubRepositories GithubRepository[]
+  githubLinks        GithubLink[]
 
   @@map("organizations")
 }
@@ -186,6 +188,7 @@ model Issue {
   assignee     User?              @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
   labels       IssueLabel[]
   dailyReports DailyReportIssue[]
+  githubLinks  GithubLink[]
   activity     ActivityEvent[]
 
   @@index([organizationId])
@@ -476,4 +479,66 @@ model AppUsageSnapshot {
   // application over time is served by the unique index above.
   @@index([organizationId, periodStart])
   @@map("app_usage_snapshots")
+}
+
+/// A GitHub repository connected to a tenant.
+///
+/// A webhook delivery carries a repository and nothing else — no organization,
+/// no account, nothing that says who it is for. This table is what answers
+/// that, and without it a delivery could only be attributed by assuming there
+/// is one tenant.
+model GithubRepository {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  /// `owner/name`, exactly as GitHub reports it in `repository.full_name`.
+  fullName       String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Globally unique, not per tenant: a delivery names only the repository, so
+  // if two tenants claimed the same one there would be no way to choose.
+  @@unique([fullName])
+  @@index([organizationId])
+  @@map("github_repositories")
+}
+
+enum GithubLinkKind {
+  pull_request
+  issue
+
+  @@map("github_link_kind")
+}
+
+/// A GitHub pull request or issue that refers to one of ours.
+///
+/// Written by the webhook when a branch name or a title mentions an issue key.
+model GithubLink {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  issueId        String         @db.Uuid
+  kind           GithubLinkKind
+  repository     String
+  number         Int
+  title          String
+  url            String
+  /// GitHub's own words: `open`, `closed`, and `merged` for a merged pull
+  /// request, which GitHub itself reports as closed with a flag.
+  state          String
+  /// The head branch, for a pull request. Null for an issue.
+  branch         String?
+  mergedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issue        Issue        @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  // One link per GitHub object per issue, so a redelivery or a later event on
+  // the same pull request updates the row rather than adding another.
+  @@unique([repository, kind, number, issueId])
+  @@index([organizationId])
+  @@index([issueId])
+  @@map("github_links")
 }
