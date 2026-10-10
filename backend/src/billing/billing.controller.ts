@@ -27,6 +27,7 @@ export class BillingController {
    * route takes a `referenceId` for whatever is being approved and is ready
    * for it.
    */
+  @RequirePermissions('billing:manage')
   @Post('checkout-sessions')
   create(
     @Req() request: AuthenticatedRequest,
