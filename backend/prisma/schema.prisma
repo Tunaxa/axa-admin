@@ -34,17 +34,39 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  dailyReports DailyReport[]
+  dailyReports  DailyReport[]
   workspaces    Workspace[]
   users         User[]
   teamMembers   TeamMember[]
   appOwnerships AppOwnership[]
+  devProfiles   DevProfile[]
   projects      Project[]
   issues        Issue[]
   labels        Label[]
-  activity   ActivityEvent[]
+  activity      ActivityEvent[]
+  appUsage      AppUsageSnapshot[]
 
   @@map("organizations")
+}
+
+model DevProfile {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  teamMemberId   String   @unique @db.Uuid
+  stack          String[]
+  ownershipArea  String?
+  slackHandle    String?
+  githubHandle   String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMember   TeamMember   @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([stack], type: Gin)
+  @@map("dev_profiles")
 }
 
 /// A container inside an organization that will own projects, issues and
@@ -57,7 +79,7 @@ model Workspace {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projects     Project[]
   issues       Issue[]
   labels       Label[]
@@ -85,7 +107,7 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedIssues Issue[]
   dailyReports   DailyReport[]
   teamMember     TeamMember?
@@ -299,6 +321,7 @@ model DailyReportIssue {
   @@index([issueId])
   @@map("daily_report_issues")
 }
+
 /// A person's place on the team, and the role they hold by default.
 ///
 /// Deliberately separate from `User`, which is the sign-in identity. Whether
@@ -318,6 +341,7 @@ model TeamMember {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   ownerships   AppOwnership[]
+  profile      DevProfile?
 
   // One membership per person per tenant.
   @@unique([userId])
@@ -366,6 +390,7 @@ enum Role {
 
   @@map("role")
 }
+
 /// An entry in the activity feed.
 ///
 /// Append-only: there is no `updatedAt` and nothing rewrites a row. A
@@ -400,4 +425,55 @@ enum ActivityEventType {
   issue_commented
 
   @@map("activity_event_type")
+}
+
+/// A reading of how one AXA application is doing over a window of time.
+///
+/// The metrics are of two kinds and the schema keeps the difference visible:
+/// `deploys` and `signups` are **counts over the period**, while `errorRate`
+/// and `mrr` are **levels as at `periodEnd`**. A single timestamp cannot say
+/// what a count counted, so the window is stored rather than inferred from the
+/// gap to the previous row — a pipeline that misses a run would otherwise
+/// silently widen the window and overstate every count in it.
+model AppUsageSnapshot {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  /// Which AXA application the reading is about.
+  app            AppKey
+  /// Start of the window, inclusive.
+  periodStart    DateTime
+  /// End of the window, exclusive. The levels below are as at this instant.
+  periodEnd      DateTime
+  /// When the reading was taken, which is not what it is about: a snapshot
+  /// backfilled next week still describes last week.
+  capturedAt     DateTime @default(now())
+
+  /// Releases that went out during the period.
+  deploys   Int?
+  /// Failed requests as a fraction of all of them over the period — `0.01320`
+  /// is 1.32%. Stored as the rate the task names; note that a rate cannot be
+  /// re-aggregated across periods without the counts behind it.
+  errorRate Decimal? @db.Decimal(6, 5)
+  /// Accounts created during the period.
+  signups   Int?
+  /// Monthly recurring revenue as at `periodEnd`. Never a float: binary
+  /// floating point cannot hold 0.10, and money that does not add up is worse
+  /// than money that is missing.
+  mrr       Decimal? @db.Decimal(14, 2)
+  /// ISO 4217 code for `mrr`. An amount with no currency is not a sum of money.
+  currency  String   @default("EUR") @db.Char(3)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // One reading per application per window, so re-running an ingestion is an
+  // update rather than a duplicate. Windows of different lengths may share a
+  // start, which is what lets a daily and a monthly roll-up coexist.
+  @@unique([organizationId, app, periodStart, periodEnd])
+  // Every application for one window — the dashboard's row. The chart for one
+  // application over time is served by the unique index above.
+  @@index([organizationId, periodStart])
+  @@map("app_usage_snapshots")
 }

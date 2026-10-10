@@ -78,3 +78,68 @@ Early development. The repository structure is in place;
 `frontend/` and `backend/` are prepared directories awaiting their
 framework scaffolds. See the phased build plan in the project
 documentation.
+
+## Container images
+
+Both projects build to a container image. `docker compose` still only runs the
+databases — these are for deploying, not for local development.
+
+```bash
+docker build -t axa-admin-backend backend
+docker build -t axa-admin-frontend --build-arg NEXT_PUBLIC_API_URL=https://api.example frontend
+```
+
+### Measured
+
+| Image | Single stage | Multi-stage | |
+| --- | --- | --- | --- |
+| Backend | 1.4 GB | **453 MB** | −68% |
+| Frontend | 1.74 GB | **324 MB** | −81% |
+
+The numbers come from building both ways and reading `docker images`, not from
+an estimate.
+
+**The frontend saving is `output: 'standalone'`.** Next traces the modules the
+server actually imports and emits them next to it, so the runtime image carries
+56 MB of traced dependencies instead of a full `node_modules`.
+
+**Most of the backend saving is one flag.** `npm ci --omit=dev` is not enough:
+npm has installed peer dependencies automatically since v7, and
+`@prisma/client` peers on the `prisma` CLI and on TypeScript. The CLI brings
+Prisma Studio, pglite, `mysql2` and `tsc` with it — 280 MB that a compiled
+server never imports. `--omit=peer` does **not** remove them; `--legacy-peer-deps`
+does, taking `node_modules` from 436 MB to 154 MB.
+
+That is a sharp edge: if anything ever does need a peer at run time, the
+container stops booting. CI builds the image and starts it on every pull
+request for exactly that reason.
+
+### Hardening
+
+- **Four stages**, so the shipped image has no compiler, no dev dependencies
+  and no source.
+- **Non-root.** Both images run as `node` (uid 1000). Root in a container is
+  one escaped process away from root on the host.
+- **`tini` as PID 1.** Node does not forward `SIGTERM` or reap children, so a
+  `docker stop` would wait out the grace period. Measured: the backend stops in
+  **592 ms**, the frontend in **877 ms**.
+- **`.dockerignore` in both projects.** Without it, `COPY . .` ships the host's
+  `node_modules` — wrong architecture, hundreds of megabytes — along with any
+  `.env` lying around.
+- **`NEXT_PUBLIC_*` is baked in at build time**, so the frontend is an
+  image per environment rather than one image promoted between them.
+
+### CI
+
+`format:check` now runs on both projects, and `no-unreachable` is an **error**
+rather than a warning. Both were added because of what they would have caught:
+a bad merge resolution left two consecutive `return` statements in the issues
+service, so every issue update silently stopped recording activity, and the
+pipeline stayed green — `format:check` was not run at all, and oxlint reported
+the dead code as a warning, which exits 0.
+
+Confirmed: the hardened lint exits **1** on that file and **0** on this branch.
+
+A new `images` job builds both containers on every pull request and prints
+their sizes, so an image that quietly doubles shows up in the log rather than
+at deploy time.
