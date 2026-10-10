@@ -215,6 +215,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 | `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
+| `20261009231500_add_issue_key` | Adds `issues.key` with a backfill, and the tenant's prefix and counter |
 
 ## Docs content schema
 
@@ -1344,6 +1345,233 @@ Two consequences, both deliberate and both worth knowing:
 - **Feature modules still import `AuthModule`** although they no longer use
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
+
+## Issue keys
+
+Every issue carries a human-readable reference — `AXA-123` — alongside its
+UUID. A branch name, a pull request title or a person in a meeting can say the
+first; none of them can say the second, which is why linking a branch to an
+issue needs the key to exist at all.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/issues/resolve?text=…` | The issues a branch name or PR title refers to |
+| `GET` | `/issues/resolve?key=…` | One issue by its key |
+
+### The prefix is per tenant
+
+`Organization.issuePrefix` (default `AXA`) and `Organization.issueCounter`.
+Per tenant rather than per project, because the branch names this has to match
+carry one prefix, and a second would make `feat/AXA-123-...` ambiguous the
+moment two projects both had an issue 123.
+
+Two tenants may each hold `AXA-1`; the unique index is on
+`(organizationId, key)`.
+
+### Allocating a key cannot race
+
+The counter is bumped with an atomic increment inside the same transaction
+that creates the issue. The row lock that takes is what stops two simultaneous
+creates both being handed `AXA-124` — eight concurrent creates produced eight
+distinct keys.
+
+### Parsing requires the prefix, and that is the point
+
+Matching anything shaped like `WORD-123` turns `fix/retry-3-times` into a
+reference to `RETRY-3`, and `feat/add-2-buttons` into `ADD-2`. Both look
+plausible in a log, and neither would be noticed until somebody's pull request
+was linked to a stranger's issue. So the parser takes the tenant's prefix and
+matches only that.
+
+| Branch | Resolves to |
+| --- | --- |
+| `feat/AXA-2-parse-branch-names` | `AXA-2` |
+| `feat/axa-2-lower-case` | `AXA-2` |
+| `fix/AXA-1-and-AXA-3-together` | `AXA-1`, `AXA-3` |
+| `feat/AXA-002-leading-zeros` | `AXA-2` |
+| `fix/retry-3-times` | nothing |
+| `feat/add-2-buttons` | nothing |
+| `feat/CRM-1-…` (another tenant's prefix) | nothing |
+
+Case-insensitive, because branch names are not usually shouted. Leading zeros
+are normalised, or `AXA-007` and `AXA-7` would be two references to one issue.
+
+### `?key=` and `?text=` fail differently
+
+A key that does not parse is a **400** — `banana` is not a missing issue, it is
+not a key. A key that parses but matches nothing is a **404**. With `?text=`,
+keys that match nothing are dropped silently instead: a branch may mention an
+issue from before this tenant's history, and that is not an error anybody can
+act on.
+
+### What this does not do
+
+- **Nothing records the link.** Resolving answers a question; storing "this
+  pull request belongs to AXA-123" is the webhook receiver's job.
+- **The prefix cannot be changed through the API**, and changing it in the
+  database would leave existing keys on the old one.
+- **Numbers are never reused.** A deleted issue's key is gone, which is right,
+  but it also means the counter only grows.
+- **`AXA-12x` resolves to `AXA-12`.** A letter straight after the number is
+  treated as slug text, the same way `AXA-123-wire` is.
+
+## GitHub
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/github/oauth/authorize` | Redirects to GitHub to approve the application |
+| `GET` | `/github/oauth/callback` | Where GitHub sends the browser back |
+| `POST` | `/github/webhook` | Where GitHub posts events |
+
+### What has to be registered by hand
+
+This part is not code. In GitHub, under **Settings → Developer settings → OAuth Apps → New OAuth App**:
+
+| Field | Value |
+| --- | --- |
+| Application name | AXA Admin |
+| Homepage URL | the frontend's origin, e.g. `http://localhost:3000` |
+| Authorization callback URL | `<api origin>/github/oauth/callback` |
+
+That gives a **Client ID** and lets you generate a **Client secret** — they go
+into `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and the callback URL has to
+be repeated in `GITHUB_CALLBACK_URL` because GitHub checks that the two match.
+
+Then, on the repository, under **Settings → Webhooks → Add webhook**:
+
+| Field | Value |
+| --- | --- |
+| Payload URL | `<api origin>/github/webhook` |
+| Content type | `application/json` |
+| Secret | a long random string, also set as `GITHUB_WEBHOOK_SECRET` |
+| Events | Issues, Pull requests |
+
+The API has to be reachable from the internet for deliveries to arrive; during
+development that means a tunnel.
+
+### The signature is over the raw body
+
+GitHub signs the **bytes** it sent and puts the result in
+`X-Hub-Signature-256`. Re-serialising the parsed JSON would not reproduce them
+— key order and whitespace both matter — so the application is created with
+`rawBody: true` and the check runs against the buffer. A delivery with unusual
+whitespace, correctly signed, is accepted; the same body re-signed after a
+one-word edit is refused.
+
+The comparison is timing-safe. Comparing with `===` leaks, through how long it
+takes to fail, how much of a guessed signature was right.
+
+**With no `GITHUB_WEBHOOK_SECRET`, every delivery is refused.** An unsigned
+webhook endpoint is an open door for anyone who learns the URL, so the failure
+mode is "nothing gets in" rather than "everything does".
+
+### `state` is signed, not stored
+
+CSRF protection on the OAuth flow needs the callback to prove it belongs to a
+flow this service started. The usual answer is a session or Redis; neither
+exists yet. Instead `state` is `<nonce>.<expiry>.<hmac>` — unguessable,
+self-expiring after ten minutes, and nothing to keep. A forged or expired one
+is a `401`.
+
+### Scopes
+
+`read:user repo:status`, not `repo`. `repo` would grant **write access to
+code**, which an admin tool that reads pull requests has no business holding.
+
+### What this does not do
+
+- **Nothing is persisted.** The callback exchanges the code, reads the account
+  and answers with it — the access token is then dropped. Keeping it needs two
+  decisions nobody has made: where it belongs (per user or per organization)
+  and how it is encrypted at rest. Storing OAuth tokens in plaintext would be
+  worse than not storing them.
+- **Nothing acts on the events.** The webhook verifies, logs and returns `202`.
+  Parsing branch names and reacting to issue and pull request events are the
+  next two tasks.
+- **No replay protection.** A delivery captured and re-sent is still correctly
+  signed. GitHub's `X-GitHub-Delivery` id is what deduplication would key on,
+  and that needs somewhere to remember ids.
+- **No `X-GitHub-Hook-Installation-Target-ID` check**, so any repository
+  configured with the secret is accepted.
+
+## GitHub
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/github/oauth/authorize` | Redirects to GitHub to approve the application |
+| `GET` | `/github/oauth/callback` | Where GitHub sends the browser back |
+| `POST` | `/github/webhook` | Where GitHub posts events |
+
+### What has to be registered by hand
+
+This part is not code. In GitHub, under **Settings → Developer settings → OAuth Apps → New OAuth App**:
+
+| Field | Value |
+| --- | --- |
+| Application name | AXA Admin |
+| Homepage URL | the frontend's origin, e.g. `http://localhost:3000` |
+| Authorization callback URL | `<api origin>/github/oauth/callback` |
+
+That gives a **Client ID** and lets you generate a **Client secret** — they go
+into `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and the callback URL has to
+be repeated in `GITHUB_CALLBACK_URL` because GitHub checks that the two match.
+
+Then, on the repository, under **Settings → Webhooks → Add webhook**:
+
+| Field | Value |
+| --- | --- |
+| Payload URL | `<api origin>/github/webhook` |
+| Content type | `application/json` |
+| Secret | a long random string, also set as `GITHUB_WEBHOOK_SECRET` |
+| Events | Issues, Pull requests |
+
+The API has to be reachable from the internet for deliveries to arrive; during
+development that means a tunnel.
+
+### The signature is over the raw body
+
+GitHub signs the **bytes** it sent and puts the result in
+`X-Hub-Signature-256`. Re-serialising the parsed JSON would not reproduce them
+— key order and whitespace both matter — so the application is created with
+`rawBody: true` and the check runs against the buffer. A delivery with unusual
+whitespace, correctly signed, is accepted; the same body re-signed after a
+one-word edit is refused.
+
+The comparison is timing-safe. Comparing with `===` leaks, through how long it
+takes to fail, how much of a guessed signature was right.
+
+**With no `GITHUB_WEBHOOK_SECRET`, every delivery is refused.** An unsigned
+webhook endpoint is an open door for anyone who learns the URL, so the failure
+mode is "nothing gets in" rather than "everything does".
+
+### `state` is signed, not stored
+
+CSRF protection on the OAuth flow needs the callback to prove it belongs to a
+flow this service started. The usual answer is a session or Redis; neither
+exists yet. Instead `state` is `<nonce>.<expiry>.<hmac>` — unguessable,
+self-expiring after ten minutes, and nothing to keep. A forged or expired one
+is a `401`.
+
+### Scopes
+
+`read:user repo:status`, not `repo`. `repo` would grant **write access to
+code**, which an admin tool that reads pull requests has no business holding.
+
+### What this does not do
+
+- **Nothing is persisted.** The callback exchanges the code, reads the account
+  and answers with it — the access token is then dropped. Keeping it needs two
+  decisions nobody has made: where it belongs (per user or per organization)
+  and how it is encrypted at rest. Storing OAuth tokens in plaintext would be
+  worse than not storing them.
+- **Nothing acts on the events.** The webhook verifies, logs and returns `202`.
+  Parsing branch names and reacting to issue and pull request events are the
+  next two tasks.
+- **No replay protection.** A delivery captured and re-sent is still correctly
+  signed. GitHub's `X-GitHub-Delivery` id is what deduplication would key on,
+  and that needs somewhere to remember ids.
+- **No `X-GitHub-Hook-Installation-Target-ID` check**, so any repository
+  configured with the secret is accepted.
 
 ## Structure
 
