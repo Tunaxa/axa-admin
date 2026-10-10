@@ -5,8 +5,6 @@ import { IntegrationsModule } from '../integrations/integrations.module.js';
 import { DailyReportsController } from './daily-reports.controller.js';
 import { DevProfilesController } from './dev-profiles.controller.js';
 import { DevProfilesService } from './dev-profiles.service.js';
-import { DevProfilesController } from './dev-profiles.controller.js';
-import { DevProfilesService } from './dev-profiles.service.js';
 import { DailyReportsService } from './daily-reports.service.js';
 import { RosterController } from './roster.controller.js';
 import { RosterService } from './roster.service.js';

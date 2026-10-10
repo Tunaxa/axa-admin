@@ -109,7 +109,7 @@ export class IssuesService {
       );
     }
 
-    const data: Prisma.IssueUncheckedUpdateInput = { ...dto };
+    var data: Prisma.IssueUncheckedUpdateInput = { ...dto };
 
     // `closedAt` is maintained here rather than by the caller, so the board's
     // drag-and-drop and the detail panel record it without knowing about it.
@@ -118,8 +118,6 @@ export class IssuesService {
     if (dto.status && dto.status !== issue.status) {
       data.closedAt = dto.status === IssueStatus.done ? new Date() : null;
     }
-
-    const data: Prisma.IssueUncheckedUpdateInput = { ...dto };
 
     // `closedAt` is maintained here rather than by the caller, so the board's
     // drag-and-drop and the detail panel record it without knowing about it.
