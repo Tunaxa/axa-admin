@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
+import { BillingModule } from './billing/billing.module.js';
 import { CompanyModule } from './company/company.module.js';
 import { DocsModule } from './docs/docs.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -32,6 +33,7 @@ import { WorkModule } from './work/work.module.js';
     }),
     PrismaModule,
     AuthModule,
+    BillingModule,
     WorkModule,
     TeamModule,
     CompanyModule,
