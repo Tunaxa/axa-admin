@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { IntegrationsModule } from '../integrations/integrations.module.js';
 import { DailyReportsController } from './daily-reports.controller.js';
 import { DailyReportsService } from './daily-reports.service.js';
 import { RosterController } from './roster.controller.js';
@@ -15,7 +16,7 @@ import { UsersService } from './users.service.js';
  * dropdown read from.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, IntegrationsModule],
   controllers: [RosterController, UsersController, DailyReportsController],
   providers: [RosterService, UsersService, DailyReportsService],
 })
