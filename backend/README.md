@@ -108,6 +108,7 @@ And two carry daily reports:
 | --- | --- | --- |
 | `DailyReport` | `daily_reports` | One developer's update for one working day |
 | `DailyReportIssue` | `daily_report_issues` | The issues a report refers to |
+| `DevProfile` | `dev_profiles` | What one member works in, owns, and can be reached on |
 
 And one carries application metrics:
 
@@ -213,6 +214,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20261008200522_add_app_usage_snapshots` | Creates `app_usage_snapshots` |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
+| `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
 
 ## Docs content schema
 
@@ -423,6 +425,433 @@ nullable.
   on this schema where the zone carries meaning. Worth settling project-wide.
 - **No cost, latency or uptime**, and no per-environment split: a snapshot is
   about an application, not about production versus staging.
+
+## Docs content schema
+
+The docs module's pages live in **MongoDB**, not PostgreSQL. A page is read and
+written whole, its content is a list of blocks whose shape differs per block
+type, and none of it is queried relationally — which is what a document store
+is for. Everything else in this service stays in PostgreSQL.
+
+| Collection | Contents |
+| --- | --- |
+| `pages` | A documentation page: its place in the tree, and its content blocks |
+
+### The page tree
+
+| Field | Purpose |
+| --- | --- |
+| `organizationId` | The owning tenant, as a PostgreSQL UUID |
+| `title` | The page's name |
+| `slug` | URL segment, unique per tenant |
+| `parentId` | The page directly above, null at the root |
+| `ancestors` | Every page above, ordered root first |
+| `order` | Position among siblings |
+| `blocks` | The content, in reading order |
+| `authorId`, `lastEditedById` | PostgreSQL user UUIDs |
+
+**The tree is stored twice, on purpose.** `parentId` is the edge; `ancestors`
+is the whole path from the root. With `parentId` alone, expanding a branch or
+building a breadcrumb costs one query per level. `ancestors` answers both in a
+single indexed read:
+
+```js
+// Everything below a page, at any depth.
+db.pages.find({ organizationId, ancestors: pageId })
+
+// One level of the sidebar, in order.
+db.pages.find({ organizationId, parentId }).sort({ order: 1 })
+```
+
+The cost is that **moving a page has to rewrite the `ancestors` of everything
+beneath it**. That is the rarer operation, and it is a single
+`updateMany` — the right side of the trade for a tree that is read constantly
+and reshaped occasionally.
+
+**`slug` is unique per tenant, not per parent**, so `/docs/<slug>` addresses a
+page wherever it sits in the tree. Moving a page then does not break links to
+it, which a nested path would guarantee.
+
+### Content blocks
+
+Blocks are **embedded in their page**, not a collection of their own. A page is
+what gets read, edited and permissioned; a block outside its page means
+nothing. Embedding also makes a save atomic, so a page is never half-written.
+
+| Field | Purpose |
+| --- | --- |
+| `_id` | Assigned by Mongo; what anchors and links point at |
+| `type` | One of the listed block types |
+| `text` | The block's text, empty for blocks that carry none |
+| `props` | The fields only some types have |
+
+Types: `paragraph`, `heading_1`, `heading_2`, `heading_3`,
+`bulleted_list_item`, `numbered_list_item`, `quote`, `callout`, `code`,
+`divider`, `image`. The list is closed, so a typo cannot create a block type
+nothing knows how to render.
+
+`props` is deliberately untyped, and carries per type:
+
+| Type | Keys |
+| --- | --- |
+| `code` | `language` |
+| `image` | `url`, `alt` |
+| `callout` | `icon` |
+| everything else | none |
+
+A discriminated union in the schema would have to be extended every time the
+editor gains a block type. The rule that matters — which keys a type accepts —
+belongs with the endpoint that writes blocks, where a bad value can be refused
+with a `400`.
+
+### What this schema does not do
+
+- **Nothing cascades from PostgreSQL.** `organizationId`, `authorId` and
+  `lastEditedById` are UUIDs in another database; Mongo cannot hold a foreign
+  key to it. Deleting an organization leaves its pages behind, and cleaning
+  them up is the application's job.
+- **Blocks are a flat list.** Nesting — a list item containing sub-items — is
+  not modelled. It would be a `children` array on `Block`, and it can be added
+  without moving any existing data.
+- **No versioning, no drafts, no page history.**
+- **No permissions.** Every page in a tenant is readable by anything that can
+  query the collection.
+- **No full-text search index.** Searching docs is its own task, and the index
+  it needs depends on whether search is Mongo's or something else's job.
+- **A page's content is capped by Mongo's 16 MB document limit.** Enormous for
+  prose; the point at which blocks would have to move to their own collection
+  is far past any real documentation page.
+
+## Docs API
+
+All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
+`org` claim, never to an organization id taken from the request.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/docs/pages` | Create a page |
+| `GET` | `/docs/pages` | The tenant's tree, **without** page content |
+| `GET` | `/docs/pages/:id` | One page, with its blocks |
+| `PATCH` | `/docs/pages/:id` | Update the fields supplied |
+| `DELETE` | `/docs/pages/:id` | Delete the page **and everything below it** |
+
+### Behaviour worth knowing
+
+- **`ancestors` is never accepted from a caller.** It is derived from the parent
+  on create and recomputed on a move. A tree whose paths can be set by hand is
+  a tree that will eventually disagree with itself; sending the field is
+  rejected with a `400`.
+- **Moving a page rewrites its descendants' paths**, in one pipelined
+  `updateMany` rather than one write per descendant.
+- **A page cannot be moved under itself or under its own descendant.** Both are
+  refused with a `400`, because either one detaches a whole branch from the
+  tree and leaves it reachable from nothing.
+- **`GET /docs/pages` leaves out `blocks`.** A sidebar needs every node to draw
+  itself and none of their content, which is the bulk of a page. One request
+  for the whole tree, not one per level.
+- **`PATCH` with `blocks` replaces the content wholesale.** A page's content is
+  an ordered list, and a partial update has no way to say that a block was
+  deleted — so a caller changing one paragraph sends the list back.
+- **`DELETE` removes the subtree** and answers `200 {"deleted": n}` rather than
+  the `204` the other modules use. Refusing while a page has children would
+  leave no way to remove a section except leaf by leaf, and a call that took
+  twelve pages with it should say so.
+- **A duplicate slug is a `409`.** It is caught from the write rather than
+  checked beforehand: two callers creating the same slug at once would both
+  pass a check, and only the unique index can actually decide.
+- A page belonging to another tenant is reported as **404, not 403**, so the
+  response never confirms that an id exists elsewhere.
+- A path parameter that is not a MongoDB id is a **400**, not a `500`.
+
+### The slug uniqueness depends on an index
+
+`409` on a duplicate slug is the unique index doing its job — the API has no
+other check. Mongoose creates that index at startup (`autoIndex` defaults to
+true), so a normal boot has it. **An environment where the index is missing
+will silently accept duplicate slugs**, and `/docs/<slug>` then has two answers.
+`autoIndex` is not what production should rely on; applying the indexes as a
+deployment step is a task of its own and has not been done.
+
+## App usage snapshots
+
+`AppUsageSnapshot` records how one AXA application did over one window of time:
+deploys, error rate, signups and MRR.
+
+### The window is stored, not implied
+
+The metrics are of two kinds, and the schema keeps the difference visible:
+
+| Kind | Fields | Meaning |
+| --- | --- | --- |
+| **Counts over the period** | `deploys`, `signups` | How many, between `periodStart` and `periodEnd` |
+| **Levels at a moment** | `errorRate`, `mrr` | What it was, as at `periodEnd` |
+
+A single timestamp cannot say what a count counted. The obvious alternative —
+one `capturedAt` per row, with counts covering the gap to the previous row —
+fails the first time a run is missed: the window silently doubles and every
+count in it is overstated, with nothing in the data to show it happened. So
+`periodStart` and `periodEnd` are stored, and `capturedAt` records *when the
+reading was taken*, which is a different question — a snapshot backfilled next
+week still describes last week.
+
+### One reading per application per window
+
+`@@unique([organizationId, app, periodStart, periodEnd])` makes re-running an
+ingestion an update rather than a duplicate, which a pipeline that can retry
+needs. Windows of different lengths may share a start, so a daily reading and a
+monthly roll-up coexist without fighting.
+
+### Money and rates
+
+`mrr` is `DECIMAL(14,2)`, never a float: binary floating point cannot represent
+`0.10`, and money that does not add up is worse than money that is missing.
+`currency` is an ISO 4217 code, because an amount with no currency is not a sum
+of money. Prisma returns both as `Decimal` objects rather than numbers.
+
+`errorRate` is `DECIMAL(6,5)` — a fraction, so `0.01320` is 1.32%.
+
+### An unmeasured metric is null, not zero
+
+All four metrics are nullable. "No deploys went out" and "nobody measured
+deploys" are different facts, and a chart has to be able to draw a gap rather
+than a false floor. This is the same reasoning that makes `DailyReport.blocked`
+nullable.
+
+### What this schema does not do
+
+- **No ingestion.** Nothing writes a snapshot; there is no collector, no
+  endpoint and no schedule.
+- **`errorRate` cannot be re-aggregated.** Averaging rates across periods or
+  applications is wrong without the request counts behind them, which are not
+  stored — the task names the rate, so the rate is what is kept.
+- **Nothing enforces non-negative counts or a rate within 0–1.** `CHECK`
+  constraints would have to be hand-written into the migration, which Prisma
+  then reports as drift on the next `migrate dev`; the validation belongs in
+  the DTO of whatever writes these.
+- **Nothing enforces `periodEnd > periodStart`**, for the same reason.
+- **Timestamps are `timestamp` rather than `timestamptz`**, matching every
+  other table here. Prisma writes UTC, so the stored data is consistent, but
+  the column type does not enforce it — and a window boundary is the one place
+  on this schema where the zone carries meaning. Worth settling project-wide.
+- **No cost, latency or uptime**, and no per-environment split: a snapshot is
+  about an application, not about production versus staging.
+
+## Docs content schema
+
+The docs module's pages live in **MongoDB**, not PostgreSQL. A page is read and
+written whole, its content is a list of blocks whose shape differs per block
+type, and none of it is queried relationally — which is what a document store
+is for. Everything else in this service stays in PostgreSQL.
+
+| Collection | Contents |
+| --- | --- |
+| `pages` | A documentation page: its place in the tree, and its content blocks |
+
+### The page tree
+
+| Field | Purpose |
+| --- | --- |
+| `organizationId` | The owning tenant, as a PostgreSQL UUID |
+| `title` | The page's name |
+| `slug` | URL segment, unique per tenant |
+| `parentId` | The page directly above, null at the root |
+| `ancestors` | Every page above, ordered root first |
+| `order` | Position among siblings |
+| `blocks` | The content, in reading order |
+| `authorId`, `lastEditedById` | PostgreSQL user UUIDs |
+
+**The tree is stored twice, on purpose.** `parentId` is the edge; `ancestors`
+is the whole path from the root. With `parentId` alone, expanding a branch or
+building a breadcrumb costs one query per level. `ancestors` answers both in a
+single indexed read:
+
+```js
+// Everything below a page, at any depth.
+db.pages.find({ organizationId, ancestors: pageId })
+
+// One level of the sidebar, in order.
+db.pages.find({ organizationId, parentId }).sort({ order: 1 })
+```
+
+The cost is that **moving a page has to rewrite the `ancestors` of everything
+beneath it**. That is the rarer operation, and it is a single
+`updateMany` — the right side of the trade for a tree that is read constantly
+and reshaped occasionally.
+
+**`slug` is unique per tenant, not per parent**, so `/docs/<slug>` addresses a
+page wherever it sits in the tree. Moving a page then does not break links to
+it, which a nested path would guarantee.
+
+### Content blocks
+
+Blocks are **embedded in their page**, not a collection of their own. A page is
+what gets read, edited and permissioned; a block outside its page means
+nothing. Embedding also makes a save atomic, so a page is never half-written.
+
+| Field | Purpose |
+| --- | --- |
+| `_id` | Assigned by Mongo; what anchors and links point at |
+| `type` | One of the listed block types |
+| `text` | The block's text, empty for blocks that carry none |
+| `props` | The fields only some types have |
+
+Types: `paragraph`, `heading_1`, `heading_2`, `heading_3`,
+`bulleted_list_item`, `numbered_list_item`, `quote`, `callout`, `code`,
+`divider`, `image`. The list is closed, so a typo cannot create a block type
+nothing knows how to render.
+
+`props` is deliberately untyped, and carries per type:
+
+| Type | Keys |
+| --- | --- |
+| `code` | `language` |
+| `image` | `url`, `alt` |
+| `callout` | `icon` |
+| everything else | none |
+
+A discriminated union in the schema would have to be extended every time the
+editor gains a block type. The rule that matters — which keys a type accepts —
+belongs with the endpoint that writes blocks, where a bad value can be refused
+with a `400`.
+
+### What this schema does not do
+
+- **Nothing cascades from PostgreSQL.** `organizationId`, `authorId` and
+  `lastEditedById` are UUIDs in another database; Mongo cannot hold a foreign
+  key to it. Deleting an organization leaves its pages behind, and cleaning
+  them up is the application's job.
+- **Blocks are a flat list.** Nesting — a list item containing sub-items — is
+  not modelled. It would be a `children` array on `Block`, and it can be added
+  without moving any existing data.
+- **No versioning, no drafts, no page history.**
+- **No permissions.** Every page in a tenant is readable by anything that can
+  query the collection.
+- **No full-text search index.** Searching docs is its own task, and the index
+  it needs depends on whether search is Mongo's or something else's job.
+- **A page's content is capped by Mongo's 16 MB document limit.** Enormous for
+  prose; the point at which blocks would have to move to their own collection
+  is far past any real documentation page.
+
+## Docs API
+
+All routes are guarded by `JwtAuthGuard` and scoped to the tenant in the token's
+`org` claim, never to an organization id taken from the request.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/docs/pages` | Create a page |
+| `GET` | `/docs/pages` | The tenant's tree, **without** page content |
+| `GET` | `/docs/pages/:id` | One page, with its blocks |
+| `PATCH` | `/docs/pages/:id` | Update the fields supplied |
+| `DELETE` | `/docs/pages/:id` | Delete the page **and everything below it** |
+
+### Behaviour worth knowing
+
+- **`ancestors` is never accepted from a caller.** It is derived from the parent
+  on create and recomputed on a move. A tree whose paths can be set by hand is
+  a tree that will eventually disagree with itself; sending the field is
+  rejected with a `400`.
+- **Moving a page rewrites its descendants' paths**, in one pipelined
+  `updateMany` rather than one write per descendant.
+- **A page cannot be moved under itself or under its own descendant.** Both are
+  refused with a `400`, because either one detaches a whole branch from the
+  tree and leaves it reachable from nothing.
+- **`GET /docs/pages` leaves out `blocks`.** A sidebar needs every node to draw
+  itself and none of their content, which is the bulk of a page. One request
+  for the whole tree, not one per level.
+- **`PATCH` with `blocks` replaces the content wholesale.** A page's content is
+  an ordered list, and a partial update has no way to say that a block was
+  deleted — so a caller changing one paragraph sends the list back.
+- **`DELETE` removes the subtree** and answers `200 {"deleted": n}` rather than
+  the `204` the other modules use. Refusing while a page has children would
+  leave no way to remove a section except leaf by leaf, and a call that took
+  twelve pages with it should say so.
+- **A duplicate slug is a `409`.** It is caught from the write rather than
+  checked beforehand: two callers creating the same slug at once would both
+  pass a check, and only the unique index can actually decide.
+- A page belonging to another tenant is reported as **404, not 403**, so the
+  response never confirms that an id exists elsewhere.
+- A path parameter that is not a MongoDB id is a **400**, not a `500`.
+
+### The slug uniqueness depends on an index
+
+`409` on a duplicate slug is the unique index doing its job — the API has no
+other check. Mongoose creates that index at startup (`autoIndex` defaults to
+true), so a normal boot has it. **An environment where the index is missing
+will silently accept duplicate slugs**, and `/docs/<slug>` then has two answers.
+`autoIndex` is not what production should rely on; applying the indexes as a
+deployment step is a task of its own and has not been done.
+
+## Dev profiles
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/dev-profiles` | The directory, filterable by `?stack=` |
+| `GET` | `/dev-profiles/:teamMemberId` | One profile |
+| `PUT` | `/dev-profiles/:teamMemberId` | Create or replace **your own** |
+
+A profile carries a `stack`, an `ownershipArea` and contact handles, and is
+addressed by team member id because that is what it belongs to.
+
+### It hangs off `TeamMember`, not `User`
+
+Like `AppOwnership`. A profile describes somebody's place on a team and stops
+meaning anything when they leave it, so removing them from the roster takes it
+with them. The cost is that re-adding someone loses what they wrote, which is
+acceptable for a description — and is exactly why the daily reports went the
+other way and point at `User`: a work log must outlive a roster change, a
+self-description need not.
+
+### `ownershipArea` is prose, deliberately
+
+`AppOwnership` already records which applications somebody holds a role in.
+That is a different question from *who do I ask about provisioning*, which is
+what this field answers. A controlled vocabulary would need a list of areas
+nobody has agreed on.
+
+### The stack is normalised, not validated
+
+Entries are trimmed, lower-cased and de-duplicated on write, so `React`,
+`react` and `  react ` do not become three skills and the filter finds all of
+them. There is no list of allowed technologies — free text is the right shape
+here — but without normalising, the field would be unsearchable within a month.
+
+### `PUT` replaces
+
+Anything left out is cleared, including the contact handles. A client loads the
+profile before saving it, the same contract the daily report form works to.
+
+### A note on the GIN index
+
+`stack` carries a GIN index, because a b-tree cannot answer array containment
+at all: `WHERE stack @> ARRAY['go']` has no other structure to use.
+
+Measured at 5,000 profiles, the planner **chooses a sequential scan anyway** —
+the whole table is 1.5 MB across 193 pages, so reading it is cheaper than
+consulting the index. With `enable_seqscan` off it does use it:
+
+```
+Bitmap Heap Scan on dev_profiles
+  ->  Bitmap Index Scan on dev_profiles_stack_idx
+        Index Cond: (stack @> '{go}'::text[])
+```
+
+So the index works and is not yet earning its keep. It stays because it is the
+only structure that *can* serve the query as the directory grows, and adding it
+with the table costs nothing next to adding it to a live one.
+
+### What this does not do
+
+- **Nobody can edit somebody else's profile**, not even an owner. A profile is
+  self-authored, and "a leader may also fix yours" is a per-record rule while
+  the permission guard decides per route.
+- **No delete.** A `PUT` with no fields empties a profile; removing it entirely
+  means removing the member.
+- **No avatar, no bio, no working hours, no timezone.**
+- **`phone` is personal data** in the same table as everything else, with no
+  separate handling and no way to hide it from other members.
+- **No search across `ownershipArea`**, the field most likely to be searched in
+  prose. That wants full text, not an array index.
 
 ## Authentication
 

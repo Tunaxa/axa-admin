@@ -30,6 +30,7 @@ model Organization {
   users         User[]
   teamMembers   TeamMember[]
   appOwnerships AppOwnership[]
+  devProfiles   DevProfile[]
   projects      Project[]
   issues        Issue[]
   labels        Label[]
@@ -37,6 +38,26 @@ model Organization {
   appUsage      AppUsageSnapshot[]
 
   @@map("organizations")
+}
+
+model DevProfile {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  teamMemberId   String   @unique @db.Uuid
+  stack          String[]
+  ownershipArea  String?
+  slackHandle    String?
+  githubHandle   String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMember   TeamMember   @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([stack], type: Gin)
+  @@map("dev_profiles")
 }
 
 /// A container inside an organization that will own projects, issues and
@@ -303,6 +324,7 @@ model TeamMember {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   ownerships   AppOwnership[]
+  profile      DevProfile?
 
   // One membership per person per tenant.
   @@unique([userId])
