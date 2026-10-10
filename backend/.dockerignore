@@ -1,0 +1,16 @@
+# Everything the build does not need. Without this, `COPY . .` ships the host's
+# node_modules — wrong architecture, hundreds of megabytes — and any .env that
+# happens to be lying around.
+node_modules
+dist
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.git
+.gitignore
+Dockerfile
+.dockerignore
+README.md
+test

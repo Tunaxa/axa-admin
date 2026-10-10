@@ -19,6 +19,7 @@ import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { CreateCommentDto } from './dto/create-comment.dto.js';
 import { CreateIssueDto } from './dto/create-issue.dto.js';
 import { ListIssuesQuery } from './dto/list-issues.query.js';
+import { ResolveIssuesQuery } from './dto/resolve-issues.query.js';
 import { UpdateIssueDto } from './dto/update-issue.dto.js';
 import { IssuesService } from './issues.service.js';
 
@@ -37,6 +38,27 @@ export class IssuesController {
     @Body() dto: CreateIssueDto,
   ): Promise<Issue> {
     return this.issues.create(request.user.org, dto);
+  }
+
+  /**
+   * Resolves what a branch name refers to.
+   *
+   * `?text=` takes a whole branch name or pull request title and answers with
+   * the issues it mentions; `?key=` takes one key. The first is what the
+   * GitHub webhook will call, the second is what a person looking up AXA-123
+   * needs.
+   */
+  @RequirePermissions('work:read')
+  @Get('resolve')
+  resolve(
+    @Req() request: AuthenticatedRequest,
+    @Query() query: ResolveIssuesQuery,
+  ): Promise<Issue[]> {
+    return query.key
+      ? this.issues
+          .findByKey(request.user.org, query.key)
+          .then((issue) => [issue])
+      : this.issues.findByText(request.user.org, query.text ?? '');
   }
 
   @RequirePermissions('work:read')

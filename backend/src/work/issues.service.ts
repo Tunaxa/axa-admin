@@ -9,6 +9,7 @@ import type { ActivityEvent, Issue, Prisma } from '@prisma/client';
 import { TeamsService } from '../integrations/teams.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityService } from './activity.service.js';
+import { parseIssueKey, parseIssueKeys } from './issue-key.js';
 import type { CreateIssueDto } from './dto/create-issue.dto.js';
 import type { ListIssuesQuery } from './dto/list-issues.query.js';
 import type { UpdateIssueDto } from './dto/update-issue.dto.js';
@@ -43,20 +44,96 @@ export class IssuesService {
       );
     }
 
-    return this.prisma.issue.create({
-      data: {
-        organizationId,
-        workspaceId: dto.workspaceId,
-        title: dto.title,
-        description: dto.description,
-        status: dto.status,
-        priority: dto.priority,
-        assigneeId: dto.assigneeId,
-        projectId: dto.projectId,
-        app: dto.app,
-        // An issue created straight into `done` was closed now.
-        closedAt: dto.status === IssueStatus.done ? new Date() : null,
-      },
+    // The key and the issue are written in one transaction, and the counter is
+    // bumped with an atomic increment rather than a read-then-write: the row
+    // lock that takes is what stops two simultaneous creates both being handed
+    // AXA-124.
+    return this.prisma.$transaction(async (tx) => {
+      const organization = await tx.organization.update({
+        where: { id: organizationId },
+        data: { issueCounter: { increment: 1 } },
+        select: { issuePrefix: true, issueCounter: true },
+      });
+
+      return tx.issue.create({
+        data: {
+          organizationId,
+          workspaceId: dto.workspaceId,
+          key: `${organization.issuePrefix}-${organization.issueCounter}`,
+          title: dto.title,
+          description: dto.description,
+          status: dto.status,
+          priority: dto.priority,
+          assigneeId: dto.assigneeId,
+          projectId: dto.projectId,
+          app: dto.app,
+          // An issue created straight into `done` was closed now.
+          closedAt: dto.status === IssueStatus.done ? new Date() : null,
+        },
+      });
+    });
+  }
+
+  /**
+   * Looks an issue up by its human-readable key, as a branch name carries it.
+   *
+   * The key is normalised, so `axa-123` and `AXA-007` both find `AXA-7`. An
+   * unparseable reference is a `400` rather than a `404`: `banana` is not a
+   * key that happens to be missing.
+   */
+  async findByKey(organizationId: string, key: string): Promise<Issue> {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { issuePrefix: true },
+    });
+
+    const parsed = organization
+      ? parseIssueKey(key, organization.issuePrefix)
+      : null;
+
+    if (!parsed) {
+      throw new BadRequestException(
+        `Not an issue key for this organization: ${key}`,
+      );
+    }
+
+    const issue = await this.prisma.issue.findFirst({
+      where: { organizationId, key: parsed },
+    });
+
+    if (!issue) {
+      throw new NotFoundException(`No issue ${parsed}`);
+    }
+
+    return issue;
+  }
+
+  /**
+   * The issues a branch name or a pull request title refers to.
+   *
+   * Keys that parse but match nothing are dropped rather than reported: a
+   * branch may well mention an issue from before this tenant's history, and
+   * that is not an error anybody can act on.
+   */
+  async findByText(organizationId: string, text: string): Promise<Issue[]> {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { issuePrefix: true },
+    });
+
+    if (!organization) {
+      return [];
+    }
+
+    const keys = parseIssueKeys(text, organization.issuePrefix);
+
+    if (keys.length === 0) {
+      return [];
+    }
+
+    return this.prisma.issue.findMany({
+      where: { organizationId, key: { in: keys } },
+      orderBy: { createdAt: 'asc' },
     });
   }
 
@@ -109,7 +186,15 @@ export class IssuesService {
       );
     }
 
-    const data: Prisma.IssueUncheckedUpdateInput = { ...dto };
+    var data: Prisma.IssueUncheckedUpdateInput = { ...dto };
+
+    // `closedAt` is maintained here rather than by the caller, so the board's
+    // drag-and-drop and the detail panel record it without knowing about it.
+    // Re-sending the same status leaves it alone: it marks the move into
+    // `done`, not the last time someone confirmed the issue was done.
+    if (dto.status && dto.status !== issue.status) {
+      data.closedAt = dto.status === IssueStatus.done ? new Date() : null;
+    }
 
     // `closedAt` is maintained here rather than by the caller, so the board's
     // drag-and-drop and the detail panel record it without knowing about it.

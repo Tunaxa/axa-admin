@@ -157,24 +157,19 @@ export class StripeService {
       return new BadGatewayException('Could not reach the payment provider');
     }
 
-    // Read before the switch: handling every known member narrows `cause` to
-    // nothing in the default branch, and the default is exactly where the type
-    // is worth logging.
-    const { type, message } = cause;
-
-    switch (type) {
+    switch (cause.type) {
       case 'StripeInvalidRequestError':
-        return new BadRequestException(message);
+        return new BadRequestException(cause.message);
 
       case 'StripeConnectionError':
-        this.logger.error(`Stripe unreachable: ${message}`);
+        this.logger.error(`Stripe unreachable: ${cause.message}`);
 
         return new GatewayTimeoutException('The payment provider timed out');
 
       case 'StripeAuthenticationError':
       case 'StripePermissionError':
         // Never echoed to the caller: it says what is wrong with our key.
-        this.logger.error(`Stripe rejected our credentials: ${message}`);
+        this.logger.error(`Stripe rejected our credentials: ${cause.message}`);
 
         return new ServiceUnavailableException('Billing is not configured');
 
@@ -186,7 +181,7 @@ export class StripeService {
         );
 
       default:
-        this.logger.error(`Stripe error (${type}): ${message}`);
+        this.logger.error(`Stripe error (${cause.type}): ${cause.message}`);
 
         return new BadGatewayException('The payment provider failed');
     }

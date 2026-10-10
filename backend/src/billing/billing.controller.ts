@@ -1,7 +1,9 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 
-import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
-import { RequirePermissions } from '../auth/permissions.decorator.js';
+import {
+  type AuthenticatedRequest,
+  JwtAuthGuard,
+} from '../auth/jwt-auth.guard.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import { type CheckoutSession, StripeService } from './stripe.service.js';
 
@@ -12,6 +14,7 @@ import { type CheckoutSession, StripeService } from './stripe.service.js';
  * written onto the session's metadata so a payment can be attributed later.
  */
 @Controller('billing')
+@UseGuards(JwtAuthGuard)
 export class BillingController {
   constructor(private readonly stripe: StripeService) {}
 
