@@ -215,6 +215,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
 | `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
+| `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
 
 ## Docs content schema
 
