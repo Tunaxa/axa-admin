@@ -220,6 +220,7 @@ job title — are not here either; they are their own layer and their own task.
 | `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
 | `20261009231500_add_issue_key` | Adds `issues.key` with a backfill, and the tenant's prefix and counter |
 | `20261009231630_add_github_links` | Creates `github_repositories` and `github_links` |
+| `20261019184240_add_withdrawn_status` | Adds `withdrawn` to the request status enum |
 
 ## Docs content schema
 
@@ -1591,6 +1592,9 @@ somebody else decides, and an approval produces a payment link.
 | `GET` | `/requests/:id` | One request |
 | `POST` | `/requests/:id/approve` | Approve, and create the checkout session |
 | `POST` | `/requests/:id/reject` | Refuse, with a reason |
+| `PATCH` | `/requests/:id` | Edit a still-open request — and re-submit it |
+| `DELETE` | `/requests/:id` | Withdraw it |
+| `GET` | `/requests/:id/transitions` | Where it can go from where it is |
 | `POST` | `/requests/:id/needs-more-info` | Send it back for detail |
 
 ### Who may do what
@@ -1613,6 +1617,45 @@ checkout URL.
 
 The request's own id is the Stripe idempotency key, so approving twice returns
 the first session rather than a second one somebody could also pay.
+
+### The state machine
+
+One table, in `request-transitions.ts`:
+
+| From | To |
+| --- | --- |
+| `pending` | approved, rejected, needs_more_info, withdrawn |
+| `needs_more_info` | **pending**, approved, rejected, withdrawn |
+| `approved` | — |
+| `rejected` | — |
+| `withdrawn` | — |
+
+Scattered conditions are how a state machine acquires a transition nobody
+meant to allow, and this one decides whether somebody gets charged.
+
+Approved and rejected are terminal on purpose: an approved request may already
+have been paid, and reversing that is a refund rather than a status change.
+
+### Editing a request re-submits it
+
+The raiser may edit while it is open, and only their own. Editing a
+`needs_more_info` request moves it back to `pending` — that is the whole point
+of the status. The approver's question is kept, so the requester can still see
+what was asked of them while their new answer sits in the note.
+
+The **application cannot be changed**: a request for a different product is a
+different request, and swapping it after an approver has looked would mean
+approving one thing and provisioning another.
+
+### Withdrawing marks, it does not delete
+
+`DELETE /requests/:id` sets `withdrawn` and answers with the record. A request
+is part of what the pipeline did, and a dashboard that counts requests must
+not have rows vanish from under it — "we withdrew four" and "four never
+happened" are different facts.
+
+Only the raiser may withdraw, including against an owner: taking back your own
+request is not an administrative act.
 
 ### `needs_more_info` is a status, not a comment
 
@@ -1643,7 +1686,10 @@ can act on.
 - **No request from outside.** Only a member of the tenant can raise one, so
   the "gateway" is internal — a customer cannot ask for their own account.
 - **No audit beyond the last decision.** A request sent back twice keeps only
-  the latest note.
+  the latest note, and a re-submitted request keeps the timestamps of the
+  decision that sent it back — so the KPI dashboard counts that send-back under
+  the request's *current* status, which is `pending` again. Getting this right
+  needs an event log per request rather than columns on it.
 - **No reminders, no SLA, no escalation** on a request left pending.
 
 ## Stripe checkout
