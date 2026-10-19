@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { PermissionsGuard } from './permissions.guard.js';
+import { PermissionsService } from './permissions.service.js';
 
 /**
  * Authentication scaffolding.
@@ -39,11 +40,11 @@ import { PermissionsGuard } from './permissions.guard.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, PermissionsGuard],
+  providers: [AuthService, JwtAuthGuard, PermissionsGuard, PermissionsService],
   // `JwtModule` is exported alongside the guard: `@UseGuards(JwtAuthGuard)`
   // makes Nest instantiate the guard in the *consuming* module, so that module
   // needs `JwtService` in scope. Exporting only the guard resolves at compile
   // time and fails at boot.
-  exports: [JwtAuthGuard, PermissionsGuard, JwtModule],
+  exports: [JwtAuthGuard, PermissionsGuard, PermissionsService, JwtModule],
 })
 export class AuthModule {}

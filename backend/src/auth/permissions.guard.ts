@@ -7,14 +7,14 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import { PrismaService } from '../prisma/prisma.service.js';
 import { type AuthenticatedRequest, JwtAuthGuard } from './jwt-auth.guard.js';
 import {
   AUTHENTICATED_KEY,
   PERMISSIONS_KEY,
   PUBLIC_KEY,
 } from './permissions.decorator.js';
-import { type Permission, permissionsFor } from './permissions.js';
+import type { Permission } from './permissions.js';
+import { PermissionsService } from './permissions.service.js';
 
 /**
  * The guard every request goes through.
@@ -36,7 +36,7 @@ export class PermissionsGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly jwtGuard: JwtAuthGuard,
-    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -87,43 +87,35 @@ export class PermissionsGuard implements CanActivate {
   /**
    * What this person may do in this tenant.
    *
-   * A user with no membership has no permissions: registering creates an
+   * No application scope here: the guard runs before the handler, so it
+   * cannot know which application a request concerns when that comes from the
+   * record being acted on. Route-level permissions are the floor; the
+   * per-application rule is enforced where the record is loaded.
+   *
+   * A user with no membership has no permissions — registering creates an
    * account, and a place on the team is granted separately. The one exception
-   * is an organization whose roster is empty — see `bootstrapping`.
+   * is an organization whose roster is empty.
    */
   private async permissionsOf(
     organizationId: string,
     userId: string,
   ): Promise<readonly Permission[]> {
-    const member = await this.prisma.teamMember.findFirst({
-      where: { userId, organizationId },
-      select: { role: true },
-    });
+    // "Could you do this anywhere", not "may you do this here": the guard runs
+    // before the handler and cannot know which application a request concerns
+    // when that comes from the record. The handler re-checks with the record
+    // in hand — see `PermissionsService.anywhere`.
+    const anywhere = await this.permissions.anywhere(organizationId, userId);
 
-    if (member) {
-      return permissionsFor(member.role);
+    if (anywhere.length > 0) {
+      return anywhere;
     }
 
-    return (await this.bootstrapping(organizationId)) ? ['team:manage'] : [];
-  }
-
-  /**
-   * Is this organization's roster still empty?
-   *
-   * Without this the feature locks the door and posts the key inside: adding
-   * the first member needs `team:manage`, which needs a membership, which
-   * nobody has. So while a tenant has no members at all, any account in it may
-   * build the roster — and nothing else.
-   *
-   * The cost is that whoever registers first in an empty tenant can appoint
-   * themselves. Seeding an owner at provisioning time would close that, and is
-   * the better answer once there is a provisioning step to hang it on.
-   */
-  private async bootstrapping(organizationId: string): Promise<boolean> {
-    const members = await this.prisma.teamMember.count({
-      where: { organizationId },
-    });
-
-    return members === 0;
+    // Without this the feature locks the door and posts the key inside:
+    // adding the first member needs `team:manage`, which needs a membership,
+    // which nobody has. While a tenant has no members at all, any account in
+    // it may build the roster — and nothing else.
+    return (await this.permissions.isBootstrapping(organizationId))
+      ? ['team:manage']
+      : [];
   }
 }
