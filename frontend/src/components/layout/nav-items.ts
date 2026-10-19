@@ -29,7 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'roadmap', label: 'Roadmap', icon: Map },
   { key: 'team', label: 'Team', icon: Users, href: '/team' },
   { key: 'company', label: 'Company', icon: Building2 },
-  { key: 'docs', label: 'Docs', icon: FileText },
+  { key: 'docs', label: 'Docs', icon: FileText, href: '/docs' },
   { key: 'app-usage', label: 'App Usage', icon: CircleDollarSign },
   { key: 'account-requests', label: 'Account Requests', icon: UserPlus },
 ];
