@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module.js';
 import { BillingModule } from '../billing/billing.module.js';
 import { IntegrationsModule } from '../integrations/integrations.module.js';
 import { AccountRequestsController } from './account-requests.controller.js';
@@ -13,7 +14,7 @@ import { AccountRequestsService } from './account-requests.service.js';
  * module depends on billing rather than the other way round.
  */
 @Module({
-  imports: [BillingModule, IntegrationsModule],
+  imports: [AuthModule, BillingModule, IntegrationsModule],
   controllers: [AccountRequestsController],
   providers: [AccountRequestsService],
   exports: [AccountRequestsService],
