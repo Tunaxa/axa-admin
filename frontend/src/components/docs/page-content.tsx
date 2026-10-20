@@ -4,7 +4,6 @@ import * as React from 'react';
 import Markdown from 'react-markdown';
 
 import { blocksToMarkdown } from './blocks-to-markdown';
-import { fetchPage } from './docs-api';
 import type { Page } from './types';
 
 /**
@@ -15,7 +14,7 @@ import type { Page } from './types';
  */
 const COMPONENTS = {
   h1: (props: object) => (
-    <h1 className="mt-6 mb-3 text-2xl font-semibold tracking-tight first:mt-0" {...props} />
+    <h1 className="mt-6 mb-3 text-2xl font-bold tracking-tight first:mt-0" {...props} />
   ),
   h2: (props: object) => (
     <h2 className="mt-6 mb-2 text-xl font-semibold tracking-tight first:mt-0" {...props} />
@@ -26,18 +25,50 @@ const COMPONENTS = {
   p: (props: object) => <p className="my-3 text-sm leading-6" {...props} />,
   ul: (props: object) => <ul className="my-3 list-disc pl-5 text-sm leading-6" {...props} />,
   ol: (props: object) => <ol className="my-3 list-decimal pl-5 text-sm leading-6" {...props} />,
-  li: (props: object) => <li className="my-1" {...props} />,
+  li: ({ children, ...props }: React.ComponentProps<'li'>) => {
+    // If it's a task list item [ ] or [x]
+    if (
+      typeof children === 'string' ||
+      (Array.isArray(children) && typeof children[0] === 'string')
+    ) {
+      const text = typeof children === 'string' ? children : (children[0] as string);
+      if (text.startsWith('[ ] ') || text.startsWith('[x] ')) {
+        const checked = text.startsWith('[x] ');
+        const remainder = text.slice(4);
+        const rest = Array.isArray(children) ? [remainder, ...children.slice(1)] : remainder;
+        return (
+          <li className="my-1.5 flex items-start gap-2 list-none -ml-5" {...props}>
+            <input
+              type="checkbox"
+              checked={checked}
+              readOnly
+              className="mt-1 h-3.5 w-3.5 rounded border-muted-foreground/50 text-primary pointer-events-none"
+            />
+            <span className={checked ? 'line-through text-muted-foreground' : ''}>{rest}</span>
+          </li>
+        );
+      }
+    }
+    return (
+      <li className="my-1" {...props}>
+        {children}
+      </li>
+    );
+  },
   blockquote: (props: object) => (
-    <blockquote className="text-muted-foreground my-3 border-l-2 pl-3 text-sm" {...props} />
+    <blockquote
+      className="text-muted-foreground my-3 border-l-2 border-primary/50 pl-3 text-sm italic"
+      {...props}
+    />
   ),
-  hr: (props: object) => <hr className="my-6" {...props} />,
+  hr: (props: object) => <hr className="my-6 border-border" {...props} />,
   pre: (props: object) => (
-    <pre className="bg-muted my-3 overflow-x-auto rounded-md p-3 text-xs" {...props} />
+    <pre className="bg-muted my-3 overflow-x-auto rounded-md p-3 text-xs font-mono" {...props} />
   ),
-  code: (props: object) => <code className="font-mono" {...props} />,
+  code: (props: object) => (
+    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs" {...props} />
+  ),
   a: (props: object) => (
-    // External by assumption: docs link out, and a link that quietly replaced
-    // the admin app would lose whatever the reader was in the middle of.
     <a
       className="underline underline-offset-2"
       target="_blank"
@@ -50,61 +81,28 @@ const COMPONENTS = {
   table: (props: object) => <table className="my-3 w-full text-sm" {...props} />,
 };
 
-type ContentState = 'loading' | 'ready' | 'failed';
-
-export function PageContent({ pageId }: { pageId: string }) {
-  const [state, setState] = React.useState<ContentState>('loading');
-  const [page, setPage] = React.useState<Page | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    fetchPage(pageId)
-      .then((loaded) => {
-        if (cancelled) return;
-        setPage(loaded);
-        setState('ready');
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : 'Could not load that page');
-        setState('failed');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pageId]);
-
-  if (state === 'loading') {
-    return <p className="text-muted-foreground p-6 text-sm">Loading the page…</p>;
-  }
-
-  if (state === 'failed' || !page) {
-    return (
-      <p role="alert" className="text-destructive p-6 text-sm">
-        {error}
-      </p>
-    );
-  }
-
+export function PageContent({ page }: { page: Page }) {
   const markdown = blocksToMarkdown(page.blocks);
 
   return (
-    <article className="mx-auto w-full max-w-3xl p-6">
-      <header className="mb-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{page.title}</h1>
-        <p className="text-muted-foreground mt-1 text-xs">
-          /{page.slug} · {page.blocks.length} block{page.blocks.length === 1 ? '' : 's'}
+    <article className="mx-auto w-full max-w-3xl px-4 py-6 md:px-8">
+      <header className="mb-6 border-b border-border/50 pb-4">
+        <h1 className="text-3xl font-bold tracking-tight">{page.title}</h1>
+        <p className="text-muted-foreground mt-1.5 text-xs">
+          /{page.slug} · {page.blocks.length} bloc{page.blocks.length === 1 ? '' : 's'}
         </p>
       </header>
 
       {markdown.length === 0 ? (
-        <p className="text-muted-foreground text-sm">This page has no content yet.</p>
+        <div className="rounded-lg border border-dashed border-border p-8 text-center">
+          <p className="text-muted-foreground text-sm">
+            Cette page n&apos;a pas encore de contenu.
+          </p>
+          <p className="text-muted-foreground/70 mt-1 text-xs">
+            Basculez en mode édition (⌘E) pour commencer à rédiger.
+          </p>
+        </div>
       ) : (
-        // Raw HTML in the source is not rendered: the renderer escapes it
-        // unless `rehype-raw` is added, which it deliberately is not.
         <Markdown components={COMPONENTS}>{markdown}</Markdown>
       )}
     </article>
