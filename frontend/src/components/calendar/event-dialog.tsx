@@ -16,12 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
 import { fromLocalInput, toLocalInput } from './date-utils';
-import {
-  type CalendarEvent,
-  type CreateEventInput,
-  type EventColor,
-  EVENT_COLORS,
-} from './types';
+import { type CalendarEvent, type CreateEventInput, type EventColor, EVENT_COLORS } from './types';
 
 interface EventDialogProps {
   open: boolean;
@@ -151,7 +146,9 @@ export function EventDialog({
         <DialogHeader>
           <DialogTitle>{event ? 'Edit event' : 'New event'}</DialogTitle>
           <DialogDescription>
-            {event ? 'Change the details or delete this event.' : 'Add an entry to the shared calendar.'}
+            {event
+              ? 'Change the details or delete this event.'
+              : 'Add an entry to the shared calendar.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -184,20 +181,12 @@ export function EventDialog({
             </label>
             <label className="grid gap-1 text-sm">
               <span className="text-muted-foreground">End</span>
-              <Input
-                type="datetime-local"
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-              />
+              <Input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
             </label>
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={allDay}
-              onChange={(e) => setAllDay(e.target.checked)}
-            />
+            <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
             <span>All day</span>
           </label>
 

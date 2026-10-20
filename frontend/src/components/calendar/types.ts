@@ -1,11 +1,4 @@
-export const EVENT_COLORS = [
-  'sky',
-  'violet',
-  'emerald',
-  'amber',
-  'rose',
-  'slate',
-] as const;
+export const EVENT_COLORS = ['sky', 'violet', 'emerald', 'amber', 'rose', 'slate'] as const;
 export type EventColor = (typeof EVENT_COLORS)[number];
 
 export interface CalendarEvent {

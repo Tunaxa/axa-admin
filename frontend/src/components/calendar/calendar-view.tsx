@@ -6,12 +6,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { FOCUS_RING } from '@/lib/focus';
 
-import {
-  createEvent,
-  deleteEvent,
-  fetchEvents,
-  updateEvent,
-} from './calendar-api';
+import { createEvent, deleteEvent, fetchEvents, updateEvent } from './calendar-api';
 import {
   addDays,
   addMonths,
@@ -30,11 +25,7 @@ import {
 } from './date-utils';
 import { EventDialog } from './event-dialog';
 import { EVENT_CHIP_CLASSES } from './event-colors';
-import type {
-  CalendarEvent,
-  CalendarViewMode,
-  CreateEventInput,
-} from './types';
+import type { CalendarEvent, CalendarViewMode, CreateEventInput } from './types';
 
 type DialogState =
   | { kind: 'closed' }
@@ -143,9 +134,7 @@ export function CalendarView() {
     // Optimistic: patch locally first so the UI responds without waiting.
     setEvents((list) =>
       list.map((x) =>
-        x.id === ev.id
-          ? { ...x, startAt: newStart.toISOString(), endAt: newEnd.toISOString() }
-          : x,
+        x.id === ev.id ? { ...x, startAt: newStart.toISOString(), endAt: newEnd.toISOString() } : x,
       ),
     );
     try {
@@ -314,7 +303,8 @@ function Toolbar({
       </div>
 
       <p className="w-full text-[11px] text-muted-foreground">
-        Shortcuts: <Kbd>m</Kbd>onth · <Kbd>w</Kbd>eek · <Kbd>d</Kbd>ay · <Kbd>t</Kbd>oday · <Kbd>c</Kbd> create · <Kbd>←</Kbd>/<Kbd>→</Kbd> navigate
+        Shortcuts: <Kbd>m</Kbd>onth · <Kbd>w</Kbd>eek · <Kbd>d</Kbd>ay · <Kbd>t</Kbd>oday ·{' '}
+        <Kbd>c</Kbd> create · <Kbd>←</Kbd>/<Kbd>→</Kbd> navigate
       </p>
     </header>
   );
@@ -350,12 +340,7 @@ function MonthView({ reference, events, onCreateAt, onEdit, onMove }: GridProps)
     if (!ev) return;
     const originalStart = new Date(ev.startAt);
     const newStart = new Date(day);
-    newStart.setHours(
-      originalStart.getHours(),
-      originalStart.getMinutes(),
-      0,
-      0,
-    );
+    newStart.setHours(originalStart.getHours(), originalStart.getMinutes(), 0, 0);
     void onMove(ev, newStart);
   }
 
@@ -389,9 +374,7 @@ function MonthView({ reference, events, onCreateAt, onEdit, onMove }: GridProps)
               type="button"
               onClick={() => onCreateAt(day)}
               className={`mb-0.5 inline-flex size-6 items-center justify-center rounded-full text-xs ${
-                isToday
-                  ? 'bg-primary text-primary-foreground font-semibold'
-                  : 'hover:bg-muted'
+                isToday ? 'bg-primary text-primary-foreground font-semibold' : 'hover:bg-muted'
               } ${FOCUS_RING}`}
               aria-label={`Create on ${day.toDateString()}`}
             >
@@ -416,9 +399,7 @@ function MonthView({ reference, events, onCreateAt, onEdit, onMove }: GridProps)
                     } ${FOCUS_RING}`}
                   >
                     {!ev.allDay ? (
-                      <span className="opacity-60 mr-1">
-                        {formatTime(new Date(ev.startAt))}
-                      </span>
+                      <span className="opacity-60 mr-1">{formatTime(new Date(ev.startAt))}</span>
                     ) : null}
                     {ev.title}
                   </button>
@@ -484,7 +465,10 @@ function TimeGrid({ days, events, onCreateAt, onEdit, onMove }: TimeGridProps) {
   }
 
   return (
-    <div className="grid h-full" style={{ gridTemplateColumns: `56px repeat(${days.length}, 1fr)` }}>
+    <div
+      className="grid h-full"
+      style={{ gridTemplateColumns: `56px repeat(${days.length}, 1fr)` }}
+    >
       {/* header row */}
       <div className="border-b border-r border-border bg-muted/30" />
       {days.map((d) => (
@@ -502,7 +486,10 @@ function TimeGrid({ days, events, onCreateAt, onEdit, onMove }: TimeGridProps) {
       ))}
 
       {/* time + columns */}
-      <div className="col-span-full grid" style={{ gridTemplateColumns: `56px repeat(${days.length}, 1fr)` }}>
+      <div
+        className="col-span-full grid"
+        style={{ gridTemplateColumns: `56px repeat(${days.length}, 1fr)` }}
+      >
         <div className="relative">
           {HOURS.map((h) => (
             <div
