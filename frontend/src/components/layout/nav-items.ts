@@ -1,6 +1,7 @@
 import type { Route } from 'next';
 import {
   Building2,
+  CalendarDays,
   CircleDollarSign,
   FileText,
   LayoutDashboard,
@@ -28,6 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'work', label: 'Work', icon: LayoutDashboard, href: '/' },
   { key: 'roadmap', label: 'Roadmap', icon: Map },
   { key: 'team', label: 'Team', icon: Users, href: '/team' },
+  { key: 'calendar', label: 'Calendar', icon: CalendarDays, href: '/calendar' },
   { key: 'company', label: 'Company', icon: Building2 },
   { key: 'docs', label: 'Docs', icon: FileText },
   { key: 'app-usage', label: 'App Usage', icon: CircleDollarSign },
