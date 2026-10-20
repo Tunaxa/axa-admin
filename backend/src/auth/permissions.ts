@@ -22,6 +22,9 @@ export const PERMISSIONS = [
   'calendar:read',
   'calendar:write',
   'calendar:delete',
+  'orgchart:read',
+  'orgchart:write',
+  'orgchart:delete',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -35,6 +38,7 @@ const VIEWER: Permission[] = [
   'team:read',
   'reports:read',
   'calendar:read',
+  'orgchart:read',
 ];
 
 /** Do the work, without reshaping the organisation or destroying its record. */
@@ -44,6 +48,7 @@ const CONTRIBUTOR: Permission[] = [
   'docs:write',
   'reports:write',
   'calendar:write',
+  'orgchart:write',
 ];
 
 /**
@@ -62,6 +67,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'work:delete',
     'docs:delete',
     'calendar:delete',
+    'orgchart:delete',
   ],
   [Role.developer]: CONTRIBUTOR,
   [Role.designer]: CONTRIBUTOR,
