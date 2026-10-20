@@ -19,6 +19,9 @@ export const PERMISSIONS = [
   'team:manage',
   'reports:read',
   'reports:write',
+  'calendar:read',
+  'calendar:write',
+  'calendar:delete',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -31,6 +34,7 @@ const VIEWER: Permission[] = [
   'docs:read',
   'team:read',
   'reports:read',
+  'calendar:read',
 ];
 
 /** Do the work, without reshaping the organisation or destroying its record. */
@@ -39,6 +43,7 @@ const CONTRIBUTOR: Permission[] = [
   'work:write',
   'docs:write',
   'reports:write',
+  'calendar:write',
 ];
 
 /**
@@ -52,7 +57,12 @@ const CONTRIBUTOR: Permission[] = [
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.owner]: EVERY_PERMISSION,
   [Role.pm_lead]: EVERY_PERMISSION,
-  [Role.dev_team_leader]: [...CONTRIBUTOR, 'work:delete', 'docs:delete'],
+  [Role.dev_team_leader]: [
+    ...CONTRIBUTOR,
+    'work:delete',
+    'docs:delete',
+    'calendar:delete',
+  ],
   [Role.developer]: CONTRIBUTOR,
   [Role.designer]: CONTRIBUTOR,
   [Role.viewer]: VIEWER,
