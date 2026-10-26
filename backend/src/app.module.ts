@@ -1,17 +1,19 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
+import { ConfigModule } from '@nestjs/config';
 
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { AppUsageModule } from './app-usage/app-usage.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
 import { BillingModule } from './billing/billing.module.js';
 import { CalendarModule } from './calendar/calendar.module.js';
 import { CompanyModule } from './company/company.module.js';
 import { DocsModule } from './docs/docs.module.js';
+import { EventsModule } from './events/events.module.js';
 import { GithubModule } from './github/github.module.js';
+import { MailModule } from './mail/mail.module.js';
 import { OrgChartModule } from './orgchart/orgchart.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RequestsModule } from './requests/requests.module.js';
@@ -21,22 +23,9 @@ import { WorkModule } from './work/work.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Docs pages live in MongoDB; everything else is in PostgreSQL. Resolved
-    // asynchronously so the URL is read after ConfigModule has loaded `.env`,
-    // not while this module is being decorated.
-    MongooseModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const uri = config.get<string>('MONGODB_URL');
-
-        if (!uri) {
-          throw new Error('MONGODB_URL is not set');
-        }
-
-        return { uri };
-      },
-    }),
     PrismaModule,
+    MailModule,
+    EventsModule,
     AuthModule,
     BillingModule,
     WorkModule,
@@ -47,6 +36,7 @@ import { WorkModule } from './work/work.module.js';
     RequestsModule,
     CalendarModule,
     OrgChartModule,
+    AppUsageModule,
   ],
   controllers: [AppController],
   providers: [

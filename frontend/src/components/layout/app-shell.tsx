@@ -1,10 +1,20 @@
+'use client';
+
+import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { AppSidebar } from './app-sidebar';
 import { TopBar } from './top-bar';
 
-/** Sidebar plus top bar, wrapping the page content. */
+/** Routes rendered standalone, without the authed shell. */
+const CHROMELESS_ROUTES = new Set<string>(['/login', '/register']);
+
+/** Sidebar + top bar, wrapping the page content. Login screens render bare. */
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  if (CHROMELESS_ROUTES.has(pathname)) {
+    return <>{children}</>;
+  }
   return (
     <div className="flex h-svh overflow-hidden">
       <AppSidebar />

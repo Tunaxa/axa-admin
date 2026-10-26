@@ -17,6 +17,14 @@ export interface IssueAssignedNotification {
   app?: string | null;
 }
 
+export interface AccountRequestNotification {
+  app: string;
+  requesterName: string;
+  requesterEmail: string;
+  status: string;
+  note: string | null;
+}
+
 export interface DailyDigestEntry {
   authorName: string;
   shipped: string;
@@ -44,6 +52,21 @@ export function issueAssignedCard(
       ['Status', notification.status],
       ['Priority', notification.priority],
       ...(notification.app ? [['App', notification.app] as const] : []),
+    ]),
+  ]);
+}
+
+export function accountRequestCard(
+  notification: AccountRequestNotification,
+): TeamsMessage {
+  return card([
+    heading(`Account request ${notification.status}`),
+    text(escapeMarkdown(notification.requesterName), { weight: 'Bolder' }),
+    facts([
+      ['Application', notification.app],
+      ['Email', notification.requesterEmail],
+      ['Decision', notification.status],
+      ...(notification.note ? [['Note', notification.note] as const] : []),
     ]),
   ]);
 }

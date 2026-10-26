@@ -4,18 +4,37 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Prisma, type DocsPage } from '@prisma/client';
 
+import { PrismaService } from '../prisma/prisma.service.js';
+import type { Block } from './block.types.js';
 import type { CreatePageDto } from './dto/create-page.dto.js';
 import type { UpdatePageDto } from './dto/update-page.dto.js';
-import { Page, type PageDocument } from './schemas/page.schema.js';
 
-/** A page's place in the tree, without its content. */
-const SUMMARY = '-blocks';
+/** Page in the tree with `blocks` stripped — the sidebar payload. */
+export type PageSummary = Omit<DocsPage, 'blocks'>;
 
-/** The duplicate-key error MongoDB raises against a unique index. */
-const DUPLICATE_KEY = 11000;
+const SUMMARY_SELECT = {
+  id: true,
+  organizationId: true,
+  title: true,
+  slug: true,
+  parentId: true,
+  ancestors: true,
+  order: true,
+  authorId: true,
+  lastEditedById: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.DocsPageSelect;
+
+function normaliseBlocks(blocks: CreatePageDto['blocks']): Block[] {
+  return (blocks ?? []).map((b) => ({
+    type: b.type,
+    text: b.text ?? '',
+    props: b.props ?? {},
+  }));
+}
 
 /**
  * Page reads and writes.
@@ -25,33 +44,33 @@ const DUPLICATE_KEY = 11000;
  * pages by guessing ids.
  *
  * `ancestors` is never accepted from a caller. It is derived from the parent
- * on create and recomputed on a move, because a tree whose paths can be set by
- * hand is a tree that will eventually disagree with itself.
+ * on create and recomputed on a move, because a tree whose paths can be set
+ * by hand is a tree that will eventually disagree with itself.
  */
 @Injectable()
 export class PagesService {
-  constructor(
-    @InjectModel(Page.name) private readonly pages: Model<PageDocument>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(
     organizationId: string,
     authorId: string,
     dto: CreatePageDto,
-  ): Promise<PageDocument> {
+  ): Promise<DocsPage> {
     const parentId = dto.parentId ?? null;
     const ancestors = await this.ancestorsUnder(organizationId, parentId);
 
     try {
-      return await this.pages.create({
-        organizationId,
-        title: dto.title,
-        slug: dto.slug,
-        parentId,
-        ancestors,
-        order: dto.order ?? 0,
-        blocks: dto.blocks ?? [],
-        authorId,
+      return await this.prisma.docsPage.create({
+        data: {
+          organizationId,
+          title: dto.title,
+          slug: dto.slug,
+          parentId,
+          ancestors,
+          order: dto.order ?? 0,
+          blocks: normaliseBlocks(dto.blocks) as unknown as Prisma.InputJsonValue,
+          authorId,
+        },
       });
     } catch (cause: unknown) {
       throw this.asSlugConflict(cause, dto.slug);
@@ -64,21 +83,19 @@ export class PagesService {
    * One request rather than one per level: a sidebar needs every node to draw
    * itself, and the blocks it does not need are the bulk of a page.
    */
-  list(organizationId: string): Promise<PageDocument[]> {
-    return this.pages
-      .find({ organizationId })
-      .select(SUMMARY)
-      .sort({ order: 1, title: 1 })
-      .exec();
+  list(organizationId: string): Promise<PageSummary[]> {
+    return this.prisma.docsPage.findMany({
+      where: { organizationId },
+      select: SUMMARY_SELECT,
+      orderBy: [{ order: 'asc' }, { title: 'asc' }],
+    });
   }
 
-  async findOne(organizationId: string, id: string): Promise<PageDocument> {
-    const page = await this.pages.findOne({ _id: id, organizationId }).exec();
-
-    if (!page) {
-      throw new NotFoundException('Page not found');
-    }
-
+  async findOne(organizationId: string, id: string): Promise<DocsPage> {
+    const page = await this.prisma.docsPage.findFirst({
+      where: { id, organizationId },
+    });
+    if (!page) throw new NotFoundException('Page not found');
     return page;
   }
 
@@ -87,25 +104,30 @@ export class PagesService {
     editorId: string,
     id: string,
     dto: UpdatePageDto,
-  ): Promise<PageDocument> {
+  ): Promise<DocsPage> {
     const page = await this.findOne(organizationId, id);
     const moving =
-      dto.parentId !== undefined &&
-      String(dto.parentId ?? '') !== String(page.parentId ?? '');
+      dto.parentId !== undefined && (dto.parentId ?? null) !== (page.parentId ?? null);
+
+    const data: Prisma.DocsPageUpdateInput = { lastEditedBy: { connect: { id: editorId } } };
 
     if (moving) {
-      await this.move(organizationId, page, dto.parentId ?? null);
+      const nextAncestors = await this.recomputeMove(organizationId, page, dto.parentId ?? null);
+      data.parent = dto.parentId
+        ? { connect: { id: dto.parentId } }
+        : { disconnect: true };
+      data.ancestors = { set: nextAncestors };
     }
 
-    if (dto.title !== undefined) page.title = dto.title;
-    if (dto.slug !== undefined) page.slug = dto.slug;
-    if (dto.order !== undefined) page.order = dto.order;
-    if (dto.blocks !== undefined) page.blocks = dto.blocks as never;
-
-    page.lastEditedById = editorId;
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.slug !== undefined) data.slug = dto.slug;
+    if (dto.order !== undefined) data.order = dto.order;
+    if (dto.blocks !== undefined) {
+      data.blocks = normaliseBlocks(dto.blocks) as unknown as Prisma.InputJsonValue;
+    }
 
     try {
-      return await page.save();
+      return await this.prisma.docsPage.update({ where: { id }, data });
     } catch (cause: unknown) {
       throw this.asSlugConflict(cause, dto.slug ?? page.slug);
     }
@@ -114,9 +136,10 @@ export class PagesService {
   /**
    * Deletes a page and everything below it.
    *
-   * The alternative — refusing while a page has children — leaves no way to
-   * remove a section without walking it leaf by leaf. The count comes back in
-   * the response, because a call that removed twelve pages should say so.
+   * `onDelete: SetNull` on `parentId` plus a manual descendant pass — a cascade
+   * on the self-relation would need a recursive FK, which Postgres does not
+   * do. The count comes back in the response because a call that removed
+   * twelve pages should say so.
    */
   async remove(
     organizationId: string,
@@ -124,106 +147,85 @@ export class PagesService {
   ): Promise<{ deleted: number }> {
     const page = await this.findOne(organizationId, id);
 
-    const descendants = await this.pages.deleteMany({
-      organizationId,
-      ancestors: page._id,
+    const descendants = await this.prisma.docsPage.deleteMany({
+      where: { organizationId, ancestors: { has: page.id } },
     });
 
-    await this.pages.deleteOne({ _id: page._id, organizationId });
+    await this.prisma.docsPage.delete({ where: { id: page.id } });
 
-    return { deleted: descendants.deletedCount + 1 };
+    return { deleted: descendants.count + 1 };
   }
 
   /**
    * Re-parents a page and rewrites the paths of everything beneath it.
    *
-   * The descendants are rewritten in one pipelined `updateMany`: each one
-   * keeps the part of its path that runs from this page downwards, and has the
-   * old prefix swapped for the new one. Loading them to rewrite in the
-   * application would be one write per descendant.
+   * The descendants are fetched once and rewritten in a transaction: each one
+   * keeps the part of its path that runs from this page downwards, and has
+   * the old prefix swapped for the new one. Postgres has no recursive array
+   * update expression, so the rewrite happens in the application — bounded by
+   * the subtree size, which is small for a documentation hierarchy.
    */
-  private async move(
+  private async recomputeMove(
     organizationId: string,
-    page: PageDocument,
+    page: DocsPage,
     newParentId: string | null,
-  ): Promise<void> {
-    if (newParentId && newParentId === String(page._id)) {
+  ): Promise<string[]> {
+    if (newParentId && newParentId === page.id) {
       throw new BadRequestException('A page cannot be its own parent');
     }
 
     const ancestors = await this.ancestorsUnder(organizationId, newParentId);
-
-    if (ancestors.some((ancestor) => ancestor.equals(page._id))) {
+    if (ancestors.includes(page.id)) {
       throw new BadRequestException('A page cannot be moved underneath itself');
     }
 
-    const oldPrefixLength = page.ancestors.length + 1;
+    const descendants = await this.prisma.docsPage.findMany({
+      where: { organizationId, ancestors: { has: page.id } },
+      select: { id: true, ancestors: true },
+    });
 
-    page.parentId = newParentId ? new Types.ObjectId(newParentId) : null;
-    page.ancestors = ancestors;
+    const newPrefix = [...ancestors, page.id];
+    const oldPrefixLength = page.ancestors.length + 1; // +1 for the page itself
 
-    await this.pages.updateMany(
-      { organizationId, ancestors: page._id },
-      [
-        {
-          $set: {
-            ancestors: {
-              $concatArrays: [
-                [...ancestors, page._id],
-                {
-                  $slice: [
-                    '$ancestors',
-                    oldPrefixLength,
-                    { $size: '$ancestors' },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-      { updatePipeline: true },
+    await this.prisma.$transaction(
+      descendants.map((d) =>
+        this.prisma.docsPage.update({
+          where: { id: d.id },
+          data: { ancestors: { set: [...newPrefix, ...d.ancestors.slice(oldPrefixLength)] } },
+        }),
+      ),
     );
+
+    return ancestors;
   }
 
   /** The path a page sitting under `parentId` would have. */
   private async ancestorsUnder(
     organizationId: string,
     parentId: string | null,
-  ): Promise<Types.ObjectId[]> {
-    if (!parentId) {
-      return [];
-    }
-
-    const parent = await this.pages
-      .findOne({ _id: parentId, organizationId })
-      .select('ancestors')
-      .exec();
-
+  ): Promise<string[]> {
+    if (!parentId) return [];
+    const parent = await this.prisma.docsPage.findFirst({
+      where: { id: parentId, organizationId },
+      select: { id: true, ancestors: true },
+    });
     if (!parent) {
-      throw new BadRequestException(
-        'Parent page not found in this organization',
-      );
+      throw new BadRequestException('Parent page not found in this organization');
     }
-
-    return [...parent.ancestors, parent._id];
+    return [...parent.ancestors, parent.id];
   }
 
   /**
-   * Turns MongoDB's duplicate-key error into a `409`.
+   * Turns Prisma's unique-constraint error into a `409`.
    *
    * Catching the write rather than checking first: two callers creating the
    * same slug at once would both pass a check, and only the unique index can
    * actually decide.
    */
   private asSlugConflict(cause: unknown, slug: string): unknown {
-    const isDuplicate =
-      typeof cause === 'object' &&
-      cause !== null &&
-      (cause as { code?: number }).code === DUPLICATE_KEY;
-
-    return isDuplicate
-      ? new ConflictException(`A page with the slug "${slug}" already exists`)
-      : cause;
+    if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === 'P2002') {
+      return new ConflictException(`A page with the slug "${slug}" already exists`);
+    }
+    return cause;
   }
 }

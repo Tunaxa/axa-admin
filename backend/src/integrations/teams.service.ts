@@ -2,8 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
+  accountRequestCard,
   dailyDigestCard,
   issueAssignedCard,
+  type AccountRequestNotification,
   type DailyDigestNotification,
   type IssueAssignedNotification,
   type TeamsMessage,
@@ -46,6 +48,10 @@ export class TeamsService {
 
   notifyIssueAssigned(notification: IssueAssignedNotification): void {
     this.post('issue assigned', issueAssignedCard(notification));
+  }
+
+  notifyAccountRequestDecided(notification: AccountRequestNotification): void {
+    this.post('account request decided', accountRequestCard(notification));
   }
 
   /** Returns the result, because a digest is triggered deliberately. */

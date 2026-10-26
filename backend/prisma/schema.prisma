@@ -49,6 +49,8 @@ model Organization {
   githubLinks        GithubLink[]
   calendarEvents     CalendarEvent[]
   orgChart           OrgChart?
+  docsPages          DocsPage[]
+  accountRequests    AccountRequest[]
 
   @@map("organizations")
 }
@@ -117,6 +119,10 @@ model User {
   teamMember     TeamMember?
   activity       ActivityEvent[]
   calendarEvents CalendarEvent[]
+  raisedRequests  AccountRequest[] @relation("RaisedRequests")
+  decidedRequests AccountRequest[] @relation("DecidedRequests")
+  authoredDocs    DocsPage[]       @relation("DocsPageAuthor")
+  editedDocs      DocsPage[]       @relation("DocsPageEditor")
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
@@ -591,4 +597,104 @@ model OrgChart {
 
   @@index([organizationId])
   @@map("org_charts")
+}
+
+/// Somebody asking for an account to be provisioned on one of the AXA
+/// applications.
+///
+/// The pipeline the KPI dashboard is meant to measure: raised, decided,
+/// paid. Each step records who and when, because "how long does approval
+/// take" is unanswerable from a status alone.
+model AccountRequest {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  /// Which AXA application the account is for.
+  app            AppKey
+  /// Who the account is for. Not a user of this service — that is the point
+  /// of provisioning.
+  requesterEmail String
+  requesterName  String
+  /// Anything the requester wants the approver to know.
+  note           String?
+  /// The member of this tenant who raised it. Null once that account is
+  /// gone: what was asked for, and what was decided, outlives whoever typed
+  /// it, the same way an activity event outlives its actor.
+  raisedById     String?              @db.Uuid
+  status         AccountRequestStatus @default(pending)
+  /// Who decided, and when. Null while it is still pending.
+  decidedById    String?              @db.Uuid
+  decidedAt      DateTime?
+  /// Why it was rejected, or what else is needed. The text an email will
+  /// carry, which is why it is kept rather than just logged.
+  decisionNote   String?
+  /// The Stripe session created on approval, and where it sends the customer.
+  checkoutSessionId String?
+  checkoutUrl       String?
+  /// When payment was confirmed. Null until something confirms it — which
+  /// nothing does yet; see the README.
+  paidAt         DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  raisedBy     User?        @relation("RaisedRequests", fields: [raisedById], references: [id], onDelete: SetNull)
+  decidedBy    User?        @relation("DecidedRequests", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  // The queue: one tenant's pending requests, oldest first.
+  @@index([organizationId, status, createdAt])
+  @@map("account_requests")
+}
+
+enum AccountRequestStatus {
+  pending
+  approved
+  rejected
+  /// Sent back for more detail. Still open, but not waiting on the approver.
+  needs_more_info
+  /// Taken back by whoever raised it. Final, and kept rather than deleted:
+  /// a withdrawn request is still part of what the pipeline did.
+  withdrawn
+
+  @@map("account_request_status")
+}
+
+/// A documentation page.
+///
+/// Blocks are kept as a JSON column; a page is read, edited and permissioned
+/// as a whole, so a separate blocks table would mean a join for every read and
+/// no gain for how the editor uses them.
+///
+/// `ancestors` holds the path from the root down (own id excluded). Stored
+/// alongside `parentId` so a subtree query — expanding a branch, moving it or
+/// deleting it — is one indexed read; `parentId` alone would need one query
+/// per level.
+model DocsPage {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  title          String
+  /// URL segment. Unique per tenant so `/docs/<slug>` resolves anywhere.
+  slug           String
+  parentId       String?  @db.Uuid
+  /// Ordered root-first; the breadcrumb and the subtree filter at once.
+  ancestors      String[] @db.Uuid
+  order          Int      @default(0)
+  /// The page content as `BlockDto[]`.
+  blocks         Json     @default("[]")
+  authorId       String   @db.Uuid
+  lastEditedById String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       DocsPage?    @relation("DocsPageTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     DocsPage[]   @relation("DocsPageTree")
+  author       User         @relation("DocsPageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  lastEditedBy User?        @relation("DocsPageEditor", fields: [lastEditedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, parentId, order])
+  @@index([ancestors(ops: ArrayOps)], type: Gin)
+  @@index([authorId])
+  @@index([lastEditedById])
+  @@map("docs_pages")
 }
