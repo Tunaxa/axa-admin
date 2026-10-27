@@ -1,5 +1,7 @@
 'use client';
 
+import { LogIn } from 'lucide-react';
+import Link from 'next/link';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -56,6 +58,27 @@ export function IssueViews() {
   }
 
   if (state === 'failed') {
+    const isAuthError =
+      error?.toLowerCase().includes('token') || error?.toLowerCase().includes('unauthorized');
+
+    if (isAuthError) {
+      return (
+        <div className="flex h-96 flex-col items-center justify-center gap-3 p-6 text-center">
+          <div className="bg-primary/10 text-primary grid size-12 place-items-center rounded-full">
+            <LogIn className="size-6" />
+          </div>
+          <h3 className="text-base font-semibold">Connexion requise</h3>
+          <p className="text-muted-foreground max-w-sm text-sm">
+            Vous n&apos;êtes pas connecté. Connectez-vous avec vos identifiants AXA Admin pour
+            accéder aux tickets et aux projets.
+          </p>
+          <Button asChild className="mt-2">
+            <Link href="/login">Se connecter</Link>
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <div className="p-4">
         <p className="text-destructive text-sm">{error}</p>
