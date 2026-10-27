@@ -5,18 +5,24 @@
  * Run with: cd backend && npx tsx -r dotenv/config prisma/seed-demo.ts dotenv_config_path=.env
  */
 
+import { randomBytes } from 'node:crypto';
+
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString }),
+});
 
 async function main() {
   const org = await prisma.organization.findFirst();
   if (!org) throw new Error('No organization — run the base seed first');
-  const admin = await prisma.user.findFirst({ where: { organizationId: org.id } });
+  const admin = await prisma.user.findFirst({
+    where: { organizationId: org.id },
+  });
   if (!admin) throw new Error('No user — run the base seed first');
 
   console.log(`Seeding into "${org.name}" (${org.id})`);
@@ -82,8 +88,10 @@ async function main() {
       note: r.note || null,
       raisedById: admin.id,
       status: r.status,
-      decidedById: r.status === 'approved' || r.status === 'rejected' ? admin.id : null,
-      decidedAt: r.status === 'approved' || r.status === 'rejected' ? new Date() : null,
+      decidedById:
+        r.status === 'approved' || r.status === 'rejected' ? admin.id : null,
+      decidedAt:
+        r.status === 'approved' || r.status === 'rejected' ? new Date() : null,
       decisionNote:
         r.status === 'approved'
           ? 'Welcome aboard — follow the Stripe link to complete setup.'
@@ -92,9 +100,14 @@ async function main() {
             : r.status === 'needs_more_info'
               ? 'Please share the number of seats you want and a company address.'
               : null,
-      checkoutSessionId: r.status === 'approved' ? 'cs_test_demo_' + Math.random().toString(36).slice(2, 10) : null,
+      checkoutSessionId:
+        r.status === 'approved'
+          ? 'cs_test_demo_' + randomBytes(8).toString('hex')
+          : null,
       checkoutUrl:
-        r.status === 'approved' ? 'https://checkout.stripe.com/test/demo' : null,
+        r.status === 'approved'
+          ? 'https://checkout.stripe.com/test/demo'
+          : null,
     };
     // Avoid duplicates on reruns: match on (org, requesterEmail, app).
     const existing = await prisma.accountRequest.findFirst({
@@ -105,7 +118,10 @@ async function main() {
       },
     });
     if (existing) {
-      await prisma.accountRequest.update({ where: { id: existing.id }, data: base });
+      await prisma.accountRequest.update({
+        where: { id: existing.id },
+        data: base,
+      });
     } else {
       await prisma.accountRequest.create({ data: base });
     }
