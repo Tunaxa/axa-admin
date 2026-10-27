@@ -38,6 +38,7 @@ import {
   type AccountRequestStatus,
   type AppKey,
 } from './requests-api';
+import { ProvisionDialog } from './provision-dialog';
 
 const STATUS_FILTERS: Array<{ id: 'all' | AccountRequestStatus; label: string }> = [
   { id: 'all', label: 'All' },
@@ -71,16 +72,17 @@ const STATUS_LABEL: Record<AccountRequestStatus, string> = {
   withdrawn: 'Withdrawn',
 };
 
-type DecisionKind = 'approve' | 'reject' | 'needs_more_info';
+type DecisionKind = 'approve' | 'reject' | 'needs_more_info' | 'provision';
 
 export function RequestsView() {
   const [requests, setRequests] = React.useState<AccountRequest[] | null>(null);
   const [filter, setFilter] = React.useState<'all' | AccountRequestStatus>('all');
   const [error, setError] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [decisionFor, setDecisionFor] = React.useState<
-    { request: AccountRequest; kind: DecisionKind } | null
-  >(null);
+  const [decisionFor, setDecisionFor] = React.useState<{
+    request: AccountRequest;
+    kind: DecisionKind;
+  } | null>(null);
 
   const load = React.useCallback(() => {
     const query = filter === 'all' ? {} : { status: filter };
@@ -99,7 +101,7 @@ export function RequestsView() {
   }, [load]);
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-6">
+    <div className="flex flex-col gap-5 p-6">
       <header className="flex items-start gap-3">
         <span className="bg-primary/10 text-primary grid size-10 shrink-0 place-items-center rounded-lg">
           <UserPlus className="size-5" aria-hidden />
@@ -169,9 +171,20 @@ export function RequestsView() {
         />
       ) : null}
 
-      {decisionFor ? (
+      {decisionFor && decisionFor.kind !== 'provision' ? (
         <DecisionDialog
           decision={decisionFor}
+          onClose={() => setDecisionFor(null)}
+          onDone={() => {
+            setDecisionFor(null);
+            load();
+          }}
+        />
+      ) : null}
+
+      {decisionFor && decisionFor.kind === 'provision' ? (
+        <ProvisionDialog
+          request={decisionFor.request}
           onClose={() => setDecisionFor(null)}
           onDone={() => {
             setDecisionFor(null);
@@ -252,9 +265,13 @@ function RequestRow({
                 <XCircle className="size-3.5" />
                 Reject
               </Button>
-              <Button size="sm" onClick={() => onDecide('approve')}>
+              <Button variant="outline" size="sm" onClick={() => onDecide('approve')}>
                 <CheckCircle2 className="size-3.5" />
-                Approve
+                Approve (Stripe)
+              </Button>
+              <Button size="sm" onClick={() => onDecide('provision')}>
+                <UserPlus className="size-3.5" />
+                Create account
               </Button>
             </div>
           ) : null}
@@ -356,7 +373,11 @@ function CreateDialog({
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
+              {submitting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Mail className="size-3.5" />
+              )}
               {submitting ? 'Creating…' : 'Create'}
             </Button>
           </DialogFooter>

@@ -1,48 +1,50 @@
 'use client';
 
 import {
-  AlertTriangle,
-  Briefcase,
+  BarChart3,
   Building2,
   CheckCircle2,
   Clock,
   Crown,
+  Filter,
+  ShieldCheck,
   Users,
 } from 'lucide-react';
 import * as React from 'react';
 
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { BarChart } from '@/components/ui/charts/bar-chart';
+import { EmptyState } from '@/components/ui/empty-state';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch } from '@/lib/api';
 
 /**
  * Executive overview.
  *
- * CEO-facing view that groups issues by department (= AXA application) and by
- * department leader (= team member whose per-app role is `owner`, `pm_lead`
- * or `dev_team_leader`). Status colours:
+ * CEO-facing: two filters at the top (department = AXA application, project),
+ * then two sections — one row per task:
  *
- * - green when done
- * - grey when in progress or in review
- * - red when the issue is still untouched (backlog or todo) past the overdue
- *   threshold — "pass leur temps et ne pas encore travailler"
- * - amber when not yet started but still inside the threshold
+ *  - "Membres" lists tasks whose assignee is a contributor (developer /
+ *    designer / viewer or unassigned)
+ *  - "Admins" lists tasks whose assignee holds a leadership role (owner,
+ *    pm_lead, dev_team_leader)
  *
- * The threshold defaults to 14 days from `createdAt` because `Issue` has no
- * due-date field yet; the control at the top lets the viewer change it.
+ * Each row has a traffic light: red for not done, green for done. Tasks the
+ * team is working on glow amber so a reviewer can tell apart "haven't started"
+ * from "in flight".
  */
 
 type AppKey = 'axa_admin' | 'axacrm' | 'axapass' | 'website';
 type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
 type IssuePriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
-type Role =
-  | 'owner'
-  | 'pm_lead'
-  | 'dev_team_leader'
-  | 'developer'
-  | 'designer'
-  | 'viewer';
+type Role = 'owner' | 'pm_lead' | 'dev_team_leader' | 'developer' | 'designer' | 'viewer';
 
 interface IssueRaw {
   id: string;
@@ -51,6 +53,7 @@ interface IssueRaw {
   priority: IssuePriority;
   app: AppKey | null;
   assigneeId: string | null;
+  projectId: string | null;
   createdAt: string;
   closedAt: string | null;
 }
@@ -62,20 +65,22 @@ interface RosterEntry {
   ownerships: { app: AppKey; role: Role }[];
 }
 
-interface TrackedIssue extends IssueRaw {
-  tone: 'done' | 'in_flight' | 'overdue' | 'planned';
-  ageDays: number;
+interface Project {
+  id: string;
+  name: string;
+  status: string;
+  workspaceId: string;
+  completionPercent: number;
 }
 
-const LEADER_ROLES = new Set<Role>(['owner', 'pm_lead', 'dev_team_leader']);
-
-const DEPARTMENTS: Array<{ app: AppKey; label: string; description: string }> = [
-  { app: 'axa_admin', label: 'AXA Admin', description: 'Internal operations platform' },
-  { app: 'axacrm', label: 'AXA CRM', description: 'Customer relationship' },
-  { app: 'axapass', label: 'AXA Pass', description: 'Identity and access' },
-  { app: 'website', label: 'Website', description: 'Public marketing site' },
+const DEPARTMENTS: Array<{ app: AppKey; label: string }> = [
+  { app: 'axa_admin', label: 'AXA Admin' },
+  { app: 'axacrm', label: 'AXA CRM' },
+  { app: 'axapass', label: 'AXA Pass' },
+  { app: 'website', label: 'Website' },
 ];
 
+const LEADER_ROLES = new Set<Role>(['owner', 'pm_lead', 'dev_team_leader']);
 const ROLE_LABEL: Record<Role, string> = {
   owner: 'Owner',
   pm_lead: 'PM Lead',
@@ -84,7 +89,6 @@ const ROLE_LABEL: Record<Role, string> = {
   designer: 'Designer',
   viewer: 'Viewer',
 };
-
 const STATUS_LABEL: Record<IssueStatus, string> = {
   backlog: 'Backlog',
   todo: 'Todo',
@@ -94,37 +98,37 @@ const STATUS_LABEL: Record<IssueStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-function daysBetween(a: Date, b: Date): number {
-  return Math.floor((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
+/** Returns the role the member has for an app — the override, else the base. */
+function effectiveRole(member: RosterEntry, app: AppKey | null): Role {
+  if (!app) return member.role;
+  return member.ownerships.find((o) => o.app === app)?.role ?? member.role;
 }
 
-function classify(issue: IssueRaw, overdueDays: number): TrackedIssue {
-  const now = new Date();
-  const created = new Date(issue.createdAt);
-  const ageDays = Math.max(0, daysBetween(now, created));
-
-  if (issue.status === 'done') return { ...issue, tone: 'done', ageDays };
-  if (issue.status === 'in_progress' || issue.status === 'in_review')
-    return { ...issue, tone: 'in_flight', ageDays };
-  // backlog or todo (or cancelled, treated as planned)
-  if (issue.status !== 'cancelled' && ageDays >= overdueDays)
-    return { ...issue, tone: 'overdue', ageDays };
-  return { ...issue, tone: 'planned', ageDays };
+function isLeader(member: RosterEntry, app: AppKey | null): boolean {
+  return LEADER_ROLES.has(effectiveRole(member, app));
 }
 
 export function ExecutiveView() {
-  const [overdueDays, setOverdueDays] = React.useState(14);
   const [issues, setIssues] = React.useState<IssueRaw[] | null>(null);
   const [roster, setRoster] = React.useState<RosterEntry[] | null>(null);
+  const [projects, setProjects] = React.useState<Project[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+
+  const [dept, setDept] = React.useState<'all' | AppKey>('all');
+  const [project, setProject] = React.useState<string>('all');
 
   React.useEffect(() => {
     let cancelled = false;
-    Promise.all([apiFetch<IssueRaw[]>('/issues'), apiFetch<RosterEntry[]>('/team-members')])
-      .then(([loadedIssues, loadedRoster]) => {
+    Promise.all([
+      apiFetch<IssueRaw[]>('/issues'),
+      apiFetch<RosterEntry[]>('/team-members'),
+      apiFetch<Project[]>('/projects').catch(() => [] as Project[]),
+    ])
+      .then(([i, r, p]) => {
         if (cancelled) return;
-        setIssues(loadedIssues);
-        setRoster(loadedRoster);
+        setIssues(i);
+        setRoster(r);
+        setProjects(p);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -135,44 +139,86 @@ export function ExecutiveView() {
     };
   }, []);
 
-  const tracked = React.useMemo(
-    () => (issues ? issues.map((i) => classify(i, overdueDays)) : null),
-    [issues, overdueDays],
-  );
+  const availableProjects = React.useMemo(() => {
+    if (!projects) return [];
+    // Filter projects to those that have at least one issue in the chosen
+    // department — a project list that proposes empties is just noise.
+    if (dept === 'all') return projects;
+    const projectIdsInDept = new Set(
+      (issues ?? []).filter((i) => i.app === dept && i.projectId).map((i) => i.projectId!),
+    );
+    return projects.filter((p) => projectIdsInDept.has(p.id));
+  }, [projects, issues, dept]);
+
+  // Clamp the project filter when the dept picker drops it out of range —
+  // derived during render rather than synced from an effect.
+  const activeProject =
+    project === 'all' || availableProjects.some((p) => p.id === project) ? project : 'all';
+
+  const filtered = React.useMemo(() => {
+    if (!issues) return null;
+    return issues.filter((i) => {
+      if (dept !== 'all' && i.app !== dept) return false;
+      if (activeProject !== 'all' && i.projectId !== activeProject) return false;
+      return true;
+    });
+  }, [issues, dept, activeProject]);
+
+  const memberTasks = React.useMemo(() => {
+    if (!filtered || !roster) return null;
+    return filtered.filter((t) => {
+      if (!t.assigneeId) return true; // unassigned → shown with the members
+      const member = roster.find((r) => r.user.id === t.assigneeId);
+      return !member || !isLeader(member, t.app);
+    });
+  }, [filtered, roster]);
+
+  const adminGroups = React.useMemo(() => {
+    if (!filtered || !roster) return null;
+    const admins = roster.filter((m) => {
+      // A roster member is admin for THIS view if they're a leader on the
+      // current department (or on any department when "All departments").
+      if (dept === 'all') {
+        return LEADER_ROLES.has(m.role) || m.ownerships.some((o) => LEADER_ROLES.has(o.role));
+      }
+      return isLeader(m, dept);
+    });
+
+    return (
+      admins
+        .map((admin) => ({
+          admin,
+          tasks: filtered.filter((t) => t.assigneeId === admin.user.id),
+        }))
+        // Admins with tasks first, then alphabetical.
+        .sort((a, b) => {
+          if (a.tasks.length !== b.tasks.length) return b.tasks.length - a.tasks.length;
+          return a.admin.user.name.localeCompare(b.admin.user.name);
+        })
+    );
+  }, [filtered, roster, dept]);
 
   const assigneeName = React.useCallback(
     (id: string | null): string => {
-      if (!id || !roster) return 'Unassigned';
-      const match = roster.find((r) => r.user.id === id);
+      if (!id) return 'Unassigned';
+      const match = roster?.find((r) => r.user.id === id);
       return match ? match.user.name : 'Unknown';
     },
     [roster],
   );
 
-  const overall = React.useMemo(() => {
-    if (!tracked) return null;
-    return {
-      total: tracked.length,
-      done: tracked.filter((t) => t.tone === 'done').length,
-      inFlight: tracked.filter((t) => t.tone === 'in_flight').length,
-      overdue: tracked.filter((t) => t.tone === 'overdue').length,
-      planned: tracked.filter((t) => t.tone === 'planned').length,
-    };
-  }, [tracked]);
-
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-6">
       <header className="flex flex-wrap items-start gap-3">
-        <span className="bg-primary/10 text-primary grid size-10 shrink-0 place-items-center rounded-lg">
+        <span className="bg-primary/10 text-primary grid size-10 shrink-0 place-items-center rounded-xl">
           <Crown className="size-5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold tracking-tight">Executive overview</h1>
           <p className="text-muted-foreground text-sm">
-            Delivery by department and by leader. Red is behind, grey is in flight, green is shipped.
+            Suivi des tâches par département et par projet. Rouge = non faite, verte = terminée.
           </p>
         </div>
-        <ThresholdPicker value={overdueDays} onChange={setOverdueDays} />
       </header>
 
       {error ? (
@@ -181,364 +227,435 @@ export function ExecutiveView() {
         </Card>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Overdue"
-          value={overall?.overdue}
-          loading={!overall}
-          icon={AlertTriangle}
-          tone="rose"
-        />
-        <StatCard
-          label="In flight"
-          value={overall?.inFlight}
-          loading={!overall}
-          icon={Clock}
-          tone="slate"
-        />
-        <StatCard
-          label="Shipped"
-          value={overall?.done}
-          loading={!overall}
-          icon={CheckCircle2}
-          tone="emerald"
-        />
-        <StatCard
-          label="Planned"
-          value={overall?.planned}
-          loading={!overall}
-          icon={Briefcase}
-          tone="amber"
-        />
-      </section>
+      <section className="bg-card/60 shadow-soft flex flex-wrap items-center gap-3 rounded-xl border border-border/70 p-3">
+        <Filter className="text-muted-foreground ml-1 size-4" aria-hidden />
+        <FilterGroup label="Département">
+          <Select value={dept} onValueChange={(v) => setDept(v as 'all' | AppKey)}>
+            <SelectTrigger className="min-w-44">
+              <SelectValue placeholder="Tous les départements" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les départements</SelectItem>
+              {DEPARTMENTS.map((d) => (
+                <SelectItem key={d.app} value={d.app}>
+                  {d.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterGroup>
 
-      <section className="grid gap-4">
-        {DEPARTMENTS.map((dept) => (
-          <DepartmentSection
-            key={dept.app}
-            department={dept}
-            tracked={tracked}
-            roster={roster}
-            overdueDays={overdueDays}
-            assigneeName={assigneeName}
+        <FilterGroup label="Projet">
+          <Select value={activeProject} onValueChange={setProject}>
+            <SelectTrigger className="min-w-56">
+              <SelectValue placeholder="Tous les projets" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les projets</SelectItem>
+              {availableProjects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterGroup>
+
+        <div className="ml-auto flex items-center gap-3 pr-1 text-xs">
+          <Counter label="Total" value={filtered?.length} />
+          <Counter
+            label="Faites"
+            value={filtered?.filter((t) => t.status === 'done').length}
+            tone="emerald"
           />
-        ))}
+          <Counter
+            label="En cours"
+            value={
+              filtered?.filter((t) => t.status === 'in_progress' || t.status === 'in_review').length
+            }
+            tone="sky"
+          />
+          <Counter
+            label="À faire"
+            value={filtered?.filter((t) => t.status === 'backlog' || t.status === 'todo').length}
+            tone="rose"
+          />
+        </div>
+      </section>
+
+      <ProjectsProgressSection projects={projects} />
+
+      <TasksSection
+        icon={Users}
+        title="Membres"
+        subtitle="Les tâches affectées aux contributeurs et aux rôles opérationnels."
+        tasks={memberTasks}
+        assigneeName={assigneeName}
+      />
+
+      <section className="flex flex-col gap-3">
+        <SectionTitle
+          icon={ShieldCheck}
+          title="Admins"
+          subtitle="Chaque leader de département et ses tâches."
+        />
+        {adminGroups === null ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-40 w-full" />
+          </div>
+        ) : adminGroups.length === 0 ? (
+          <EmptyState
+            icon={ShieldCheck}
+            title="Aucun admin"
+            description="Aucun rôle de leadership n'a encore été attribué pour ce filtre."
+          />
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {adminGroups.map(({ admin, tasks }) => (
+              <AdminCard
+                key={admin.id}
+                admin={admin}
+                tasks={tasks}
+                dept={dept === 'all' ? null : dept}
+              />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
 }
 
-function ThresholdPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  const options = [7, 14, 30, 60];
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1 text-xs">
-      <span className="text-muted-foreground mr-1">Overdue after</span>
-      {options.map((o) => (
-        <Button
-          key={o}
-          size="sm"
-          variant={o === value ? 'default' : 'outline'}
-          onClick={() => onChange(o)}
-          className="h-7 min-w-10 px-2 text-xs"
-        >
-          {o}d
-        </Button>
-      ))}
-    </div>
+    <label className="flex items-center gap-1.5 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      {children}
+    </label>
   );
 }
 
-function StatCard({
+function Counter({
   label,
   value,
-  loading,
-  icon: Icon,
   tone,
 }: {
   label: string;
   value?: number;
-  loading: boolean;
-  icon: typeof Clock;
-  tone: 'rose' | 'slate' | 'emerald' | 'amber';
+  tone?: 'emerald' | 'sky' | 'rose';
 }) {
   const toneClass =
-    tone === 'rose'
-      ? 'text-rose-600 dark:text-rose-400'
-      : tone === 'emerald'
-        ? 'text-emerald-600 dark:text-emerald-400'
-        : tone === 'amber'
-          ? 'text-amber-600 dark:text-amber-400'
-          : 'text-slate-600 dark:text-slate-400';
-
+    tone === 'emerald'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : tone === 'sky'
+        ? 'text-sky-600 dark:text-sky-400'
+        : tone === 'rose'
+          ? 'text-rose-600 dark:text-rose-400'
+          : 'text-foreground';
   return (
-    <Card>
-      <CardContent className="flex flex-row items-center gap-3 pt-5">
-        <span className={`bg-muted/60 grid size-10 shrink-0 place-items-center rounded-lg ${toneClass}`}>
-          <Icon className="size-5" aria-hidden />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="text-muted-foreground text-xs uppercase tracking-wide">{label}</span>
-          {loading ? (
-            <Skeleton className="mt-1 h-7 w-14" />
-          ) : (
-            <span className={`text-2xl font-semibold tabular-nums ${toneClass}`}>{value ?? 0}</span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <span className="inline-flex items-center gap-1">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`tabular-nums font-semibold ${toneClass}`}>{value ?? '—'}</span>
+    </span>
   );
 }
 
-function DepartmentSection({
-  department,
-  tracked,
-  roster,
-  overdueDays,
-  assigneeName,
+function SectionTitle({
+  icon: Icon,
+  title,
+  subtitle,
 }: {
-  department: { app: AppKey; label: string; description: string };
-  tracked: TrackedIssue[] | null;
-  roster: RosterEntry[] | null;
-  overdueDays: number;
-  assigneeName: (id: string | null) => string;
+  icon: typeof Users;
+  title: string;
+  subtitle?: string;
 }) {
-  const deptIssues = React.useMemo(
-    () => (tracked ? tracked.filter((t) => t.app === department.app) : null),
-    [tracked, department.app],
-  );
-
-  const leaders = React.useMemo(() => {
-    if (!roster) return [];
-    return roster.filter((r) => {
-      const ownership = r.ownerships.find((o) => o.app === department.app);
-      const effective = ownership?.role ?? r.role;
-      return LEADER_ROLES.has(effective);
-    });
-  }, [roster, department.app]);
-
-  const summary = React.useMemo(() => {
-    if (!deptIssues)
-      return { total: 0, done: 0, inFlight: 0, overdue: 0, planned: 0, percent: 0 };
-    const total = deptIssues.length;
-    const done = deptIssues.filter((t) => t.tone === 'done').length;
-    const inFlight = deptIssues.filter((t) => t.tone === 'in_flight').length;
-    const overdue = deptIssues.filter((t) => t.tone === 'overdue').length;
-    const planned = deptIssues.filter((t) => t.tone === 'planned').length;
-    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
-    return { total, done, inFlight, overdue, planned, percent };
-  }, [deptIssues]);
-
-  const [notStarted, inFlight, done] = React.useMemo(() => {
-    const n = (deptIssues ?? []).filter((t) => t.tone === 'overdue' || t.tone === 'planned');
-    const f = (deptIssues ?? []).filter((t) => t.tone === 'in_flight');
-    const d = (deptIssues ?? []).filter((t) => t.tone === 'done');
-    return [n, f, d];
-  }, [deptIssues]);
-
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="bg-primary/10 text-primary grid size-9 shrink-0 place-items-center rounded-md">
-            <Building2 className="size-4" aria-hidden />
-          </span>
-          <div>
-            <CardTitle>{department.label}</CardTitle>
-            <p className="text-muted-foreground text-xs">{department.description}</p>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-1 text-xs">
-          <span className="text-muted-foreground tabular-nums">
-            {summary.done}/{summary.total} shipped
-          </span>
-          {summary.overdue > 0 ? (
-            <span className="rounded-full bg-rose-500/15 px-2 py-0.5 font-medium text-rose-700 dark:text-rose-300">
-              {summary.overdue} overdue
-            </span>
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
-        <div className="bg-muted flex h-2 w-full overflow-hidden rounded-full">
-          <div
-            className="bg-emerald-500 h-full"
-            style={{ width: `${(summary.done / Math.max(summary.total, 1)) * 100}%` }}
-          />
-          <div
-            className="bg-slate-400 h-full"
-            style={{ width: `${(summary.inFlight / Math.max(summary.total, 1)) * 100}%` }}
-          />
-          <div
-            className="bg-rose-500 h-full"
-            style={{ width: `${(summary.overdue / Math.max(summary.total, 1)) * 100}%` }}
-          />
-          <div
-            className="bg-amber-400 h-full"
-            style={{ width: `${(summary.planned / Math.max(summary.total, 1)) * 100}%` }}
-          />
-        </div>
-
-        {leaders.length === 0 ? (
-          <p className="text-muted-foreground text-xs">
-            <Users className="mr-1 inline size-3.5" aria-hidden />
-            No leader assigned to this department yet.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {leaders.map((leader) => {
-              const ownership = leader.ownerships.find((o) => o.app === department.app);
-              const role = ownership?.role ?? leader.role;
-              const leaderTasks = (deptIssues ?? []).filter(
-                (t) => t.assigneeId === leader.user.id,
-              );
-              const leaderOverdue = leaderTasks.filter((t) => t.tone === 'overdue').length;
-              return (
-                <span
-                  key={leader.id}
-                  className="bg-muted/50 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs"
-                >
-                  <span className="font-medium">{leader.user.name}</span>
-                  <span className="text-muted-foreground">· {ROLE_LABEL[role]}</span>
-                  <span className="text-muted-foreground tabular-nums">· {leaderTasks.length}</span>
-                  {leaderOverdue > 0 ? (
-                    <span className="rounded-full bg-rose-500/20 px-1.5 py-0 text-[10px] font-medium text-rose-700 dark:text-rose-300">
-                      {leaderOverdue} late
-                    </span>
-                  ) : null}
-                </span>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="grid gap-3 lg:grid-cols-3">
-          <TaskColumn
-            heading="Not started"
-            items={deptIssues === null ? null : notStarted}
-            emptyText="Nothing in the backlog."
-            overdueDays={overdueDays}
-            assigneeName={assigneeName}
-          />
-          <TaskColumn
-            heading="In progress"
-            items={deptIssues === null ? null : inFlight}
-            emptyText="Nothing in flight."
-            overdueDays={overdueDays}
-            assigneeName={assigneeName}
-          />
-          <TaskColumn
-            heading="Done"
-            items={deptIssues === null ? null : done}
-            emptyText="Nothing shipped yet."
-            overdueDays={overdueDays}
-            assigneeName={assigneeName}
-          />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function TaskColumn({
-  heading,
-  items,
-  emptyText,
-  overdueDays,
-  assigneeName,
-}: {
-  heading: string;
-  items: TrackedIssue[] | null;
-  emptyText: string;
-  overdueDays: number;
-  assigneeName: (id: string | null) => string;
-}) {
-  const headingTone =
-    heading === 'Done'
-      ? 'text-emerald-700 dark:text-emerald-400'
-      : heading === 'In progress'
-        ? 'text-slate-700 dark:text-slate-300'
-        : 'text-rose-700 dark:text-rose-400';
-
-  return (
-    <div className="bg-muted/30 flex min-h-32 flex-col gap-2 rounded-md border p-2">
-      <div className="flex items-center justify-between px-1">
-        <h4 className={`text-xs font-semibold uppercase tracking-wide ${headingTone}`}>
-          {heading}
-        </h4>
-        {items ? (
-          <span className="text-muted-foreground text-xs tabular-nums">{items.length}</span>
-        ) : null}
+    <div className="flex items-start gap-2.5">
+      <Icon className="text-muted-foreground mt-0.5 size-4" aria-hidden />
+      <div>
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        {subtitle ? <p className="text-muted-foreground text-xs">{subtitle}</p> : null}
       </div>
-      {items === null ? (
-        <>
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-4/5" />
-        </>
-      ) : items.length === 0 ? (
-        <p className="text-muted-foreground px-1 py-2 text-xs">{emptyText}</p>
-      ) : (
-        <ul className="flex flex-col gap-1.5">
-          {items.map((item) => (
-            <IssueChip
-              key={item.id}
-              item={item}
-              overdueDays={overdueDays}
-              assigneeName={assigneeName(item.assigneeId)}
-            />
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
 
-function IssueChip({
-  item,
-  overdueDays,
+function TasksSection({
+  icon,
+  title,
+  subtitle,
+  tasks,
   assigneeName,
 }: {
-  item: TrackedIssue;
-  overdueDays: number;
-  assigneeName: string;
+  icon: typeof Users;
+  title: string;
+  subtitle?: string;
+  tasks: IssueRaw[] | null;
+  assigneeName: (id: string | null) => string;
 }) {
-  const toneClass =
-    item.tone === 'done'
-      ? 'border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/40'
-      : item.tone === 'in_flight'
-        ? 'border-slate-400/40 bg-slate-50 dark:bg-slate-900/40'
-        : item.tone === 'overdue'
-          ? 'border-rose-500/50 bg-rose-50 dark:bg-rose-950/40'
-          : 'border-amber-400/40 bg-amber-50 dark:bg-amber-950/30';
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionTitle icon={icon} title={title} subtitle={subtitle} />
+      <Card>
+        <CardContent className="p-0">
+          {tasks === null ? (
+            <div className="grid gap-2 p-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : tasks.length === 0 ? (
+            <div className="p-4">
+              <EmptyState
+                icon={icon}
+                title="Aucune tâche"
+                description="Aucune tâche ne correspond au filtre pour cette section."
+              />
+            </div>
+          ) : (
+            <TasksTable tasks={tasks} assigneeName={assigneeName} />
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
 
-  const statusTone =
-    item.tone === 'done'
-      ? 'text-emerald-700 dark:text-emerald-300'
-      : item.tone === 'in_flight'
-        ? 'text-slate-600 dark:text-slate-300'
-        : item.tone === 'overdue'
-          ? 'text-rose-700 dark:text-rose-300'
-          : 'text-amber-700 dark:text-amber-300';
+function TasksTable({
+  tasks,
+  assigneeName,
+}: {
+  tasks: IssueRaw[];
+  assigneeName: (id: string | null) => string;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-border/60 bg-muted/30 text-muted-foreground border-b text-left text-[11px] uppercase tracking-wider">
+            <th className="px-4 py-2 font-medium">Tâche</th>
+            <th className="px-4 py-2 font-medium">Personne assignée</th>
+            <th className="px-4 py-2 font-medium">Statut</th>
+            <th className="w-20 px-4 py-2 text-center font-medium">Progrès</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map((t) => (
+            <TaskRow key={t.id} task={t} assigneeName={assigneeName(t.assigneeId)} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TaskRow({ task, assigneeName }: { task: IssueRaw; assigneeName: string }) {
+  return (
+    <tr className="border-border/60 hover:bg-muted/40 border-b last:border-b-0 transition-colors">
+      <td className="px-4 py-2.5">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-foreground font-medium leading-snug">{task.title}</span>
+          {task.priority !== 'none' ? (
+            <span className="text-muted-foreground text-[11px] uppercase tracking-wide">
+              Priorité {task.priority}
+            </span>
+          ) : null}
+        </div>
+      </td>
+      <td className="text-muted-foreground px-4 py-2.5 text-sm">{assigneeName}</td>
+      <td className="px-4 py-2.5">
+        <StatusPill status={task.status} />
+      </td>
+      <td className="px-4 py-2.5">
+        <div className="flex justify-center">
+          <ProgressLight status={task.status} />
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function StatusPill({ status }: { status: IssueStatus }) {
+  const tone =
+    status === 'done'
+      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+      : status === 'in_progress' || status === 'in_review'
+        ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+        : status === 'cancelled'
+          ? 'bg-muted text-muted-foreground'
+          : 'bg-rose-500/15 text-rose-700 dark:text-rose-300';
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+      {STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+/**
+ * Traffic light.
+ *
+ * Red when the task hasn't been done (backlog / todo / in_progress / in_review),
+ * green when done. Amber shade on "in progress" so the viewer can read it as
+ * "started but not finished" at a glance. Cancelled renders grey so a
+ * reviewer doesn't confuse it with a shipped item.
+ */
+function ProgressLight({ status }: { status: IssueStatus }) {
+  if (status === 'done') {
+    return (
+      <span className="relative inline-flex items-center justify-center">
+        <span className="absolute inline-flex size-4 animate-ping rounded-full bg-emerald-500/40" />
+        <span className="relative inline-flex size-3 items-center justify-center rounded-full bg-emerald-500 shadow-sm">
+          <CheckCircle2 className="size-2.5 text-white" aria-hidden />
+        </span>
+      </span>
+    );
+  }
+  if (status === 'cancelled') {
+    return <span className="inline-flex size-3 rounded-full bg-muted-foreground" aria-hidden />;
+  }
+  const inFlight = status === 'in_progress' || status === 'in_review';
+  const colour = inFlight ? 'bg-amber-500' : 'bg-rose-500';
+  return (
+    <span
+      className={`inline-flex size-3 rounded-full ${colour} shadow-sm`}
+      title={inFlight ? 'En cours' : 'À faire'}
+      aria-hidden
+    />
+  );
+}
+
+function AdminCard({
+  admin,
+  tasks,
+  dept,
+}: {
+  admin: RosterEntry;
+  tasks: IssueRaw[];
+  dept: AppKey | null;
+}) {
+  const role = effectiveRole(admin, dept);
+  const done = tasks.filter((t) => t.status === 'done').length;
+  const inFlight = tasks.filter(
+    (t) => t.status === 'in_progress' || t.status === 'in_review',
+  ).length;
+  const todo = tasks.length - done - inFlight;
+  const percent = tasks.length === 0 ? 0 : Math.round((done / tasks.length) * 100);
 
   return (
-    <li
-      className={`flex flex-col gap-1 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${toneClass}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="line-clamp-2 text-sm font-medium text-foreground">{item.title}</span>
-        <span className={`shrink-0 text-[10px] font-semibold uppercase ${statusTone}`}>
-          {STATUS_LABEL[item.status]}
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <span className="bg-primary/10 text-primary grid size-9 place-items-center rounded-full text-xs font-semibold">
+            {admin.user.name
+              .split(/\s+/)
+              .map((p) => p[0] ?? '')
+              .join('')
+              .slice(0, 2)
+              .toUpperCase()}
+          </span>
+          <div>
+            <CardTitle className="text-sm">{admin.user.name}</CardTitle>
+            <p className="text-muted-foreground text-xs">{ROLE_LABEL[role]}</p>
+          </div>
+        </div>
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {done}/{tasks.length} · {percent}%
         </span>
-      </div>
-      <div className="text-muted-foreground flex items-center justify-between gap-2 text-[11px]">
-        <span className="truncate">{assigneeName}</span>
-        <span className="shrink-0 tabular-nums">
-          {item.tone === 'overdue'
-            ? `${item.ageDays - overdueDays + 1}d late`
-            : item.tone === 'done'
-              ? 'Shipped'
-              : `${item.ageDays}d old`}
-        </span>
-      </div>
-    </li>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="bg-muted flex h-1.5 w-full overflow-hidden rounded-full">
+          <div
+            className="bg-emerald-500 h-full"
+            style={{ width: `${(done / Math.max(tasks.length, 1)) * 100}%` }}
+          />
+          <div
+            className="bg-amber-500 h-full"
+            style={{ width: `${(inFlight / Math.max(tasks.length, 1)) * 100}%` }}
+          />
+          <div
+            className="bg-rose-500 h-full"
+            style={{ width: `${(todo / Math.max(tasks.length, 1)) * 100}%` }}
+          />
+        </div>
+        {tasks.length === 0 ? (
+          <p className="text-muted-foreground text-xs">
+            <Clock className="mr-1 inline size-3" aria-hidden />
+            Aucune tâche sur ce filtre.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {tasks.slice(0, 6).map((task) => (
+              <li
+                key={task.id}
+                className="hover:bg-muted/50 -mx-2 flex items-center gap-2.5 rounded-md px-2 py-1 transition-colors"
+              >
+                <ProgressLight status={task.status} />
+                <span className="min-w-0 flex-1 truncate text-sm">{task.title}</span>
+                <span className="text-muted-foreground shrink-0 text-[11px] uppercase tracking-wide">
+                  {STATUS_LABEL[task.status]}
+                </span>
+              </li>
+            ))}
+            {tasks.length > 6 ? (
+              <li className="text-muted-foreground px-2 pt-1 text-[11px]">
+                <Building2 className="mr-1 inline size-3" aria-hidden />+{tasks.length - 6} autres
+                tâches
+              </li>
+            ) : null}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProjectsProgressSection({ projects }: { projects: Project[] | null }) {
+  const data = React.useMemo(
+    () =>
+      projects
+        ? projects
+            .map((p) => ({ label: p.name, value: p.completionPercent }))
+            .sort((a, b) => b.value - a.value)
+        : [],
+    [projects],
+  );
+
+  const average =
+    projects && projects.length > 0
+      ? Math.round(projects.reduce((sum, p) => sum + p.completionPercent, 0) / projects.length)
+      : 0;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionTitle
+        icon={BarChart3}
+        title="Avancement des projets"
+        subtitle="Pourcentage de complétion défini par chaque admin."
+      />
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardTitle className="text-sm">Par projet</CardTitle>
+          {projects ? (
+            <span className="text-muted-foreground text-xs tabular-nums">
+              Moyenne {average}% · {projects.length} {projects.length > 1 ? 'projets' : 'projet'}
+            </span>
+          ) : null}
+        </CardHeader>
+        <CardContent>
+          {projects === null ? (
+            <Skeleton className="h-28 w-full" />
+          ) : projects.length === 0 ? (
+            <EmptyState
+              icon={BarChart3}
+              title="Aucun projet"
+              description="Dès qu'un projet est créé, son avancement apparait ici."
+            />
+          ) : (
+            <BarChart data={data} maxRows={8} />
+          )}
+        </CardContent>
+      </Card>
+    </section>
   );
 }

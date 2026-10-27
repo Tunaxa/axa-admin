@@ -68,7 +68,9 @@ export class PagesService {
           parentId,
           ancestors,
           order: dto.order ?? 0,
-          blocks: normaliseBlocks(dto.blocks) as unknown as Prisma.InputJsonValue,
+          blocks: normaliseBlocks(
+            dto.blocks,
+          ) as unknown as Prisma.InputJsonValue,
           authorId,
         },
       });
@@ -107,12 +109,19 @@ export class PagesService {
   ): Promise<DocsPage> {
     const page = await this.findOne(organizationId, id);
     const moving =
-      dto.parentId !== undefined && (dto.parentId ?? null) !== (page.parentId ?? null);
+      dto.parentId !== undefined &&
+      (dto.parentId ?? null) !== (page.parentId ?? null);
 
-    const data: Prisma.DocsPageUpdateInput = { lastEditedBy: { connect: { id: editorId } } };
+    const data: Prisma.DocsPageUpdateInput = {
+      lastEditedBy: { connect: { id: editorId } },
+    };
 
     if (moving) {
-      const nextAncestors = await this.recomputeMove(organizationId, page, dto.parentId ?? null);
+      const nextAncestors = await this.recomputeMove(
+        organizationId,
+        page,
+        dto.parentId ?? null,
+      );
       data.parent = dto.parentId
         ? { connect: { id: dto.parentId } }
         : { disconnect: true };
@@ -123,7 +132,9 @@ export class PagesService {
     if (dto.slug !== undefined) data.slug = dto.slug;
     if (dto.order !== undefined) data.order = dto.order;
     if (dto.blocks !== undefined) {
-      data.blocks = normaliseBlocks(dto.blocks) as unknown as Prisma.InputJsonValue;
+      data.blocks = normaliseBlocks(
+        dto.blocks,
+      ) as unknown as Prisma.InputJsonValue;
     }
 
     try {
@@ -191,7 +202,11 @@ export class PagesService {
       descendants.map((d) =>
         this.prisma.docsPage.update({
           where: { id: d.id },
-          data: { ancestors: { set: [...newPrefix, ...d.ancestors.slice(oldPrefixLength)] } },
+          data: {
+            ancestors: {
+              set: [...newPrefix, ...d.ancestors.slice(oldPrefixLength)],
+            },
+          },
         }),
       ),
     );
@@ -210,7 +225,9 @@ export class PagesService {
       select: { id: true, ancestors: true },
     });
     if (!parent) {
-      throw new BadRequestException('Parent page not found in this organization');
+      throw new BadRequestException(
+        'Parent page not found in this organization',
+      );
     }
     return [...parent.ancestors, parent.id];
   }
@@ -223,8 +240,13 @@ export class PagesService {
    * actually decide.
    */
   private asSlugConflict(cause: unknown, slug: string): unknown {
-    if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === 'P2002') {
-      return new ConflictException(`A page with the slug "${slug}" already exists`);
+    if (
+      cause instanceof Prisma.PrismaClientKnownRequestError &&
+      cause.code === 'P2002'
+    ) {
+      return new ConflictException(
+        `A page with the slug "${slug}" already exists`,
+      );
     }
     return cause;
   }

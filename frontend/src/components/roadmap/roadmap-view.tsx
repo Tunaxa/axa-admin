@@ -81,16 +81,14 @@ export function RoadmapView() {
   const overall = React.useMemo(() => (issues ? progress(issues) : null), [issues]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-6">
       <header className="flex items-start gap-3">
         <span className="bg-primary/10 text-primary grid size-10 shrink-0 place-items-center rounded-lg">
           <MapIcon className="size-5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold tracking-tight">Roadmap</h1>
-          <p className="text-muted-foreground text-sm">
-            Delivery view by priority and by product.
-          </p>
+          <p className="text-muted-foreground text-sm">Delivery view by priority and by product.</p>
         </div>
         <Button asChild variant="outline" size="sm">
           <Link href="/">
@@ -112,11 +110,7 @@ export function RoadmapView() {
 
       <section className="grid gap-4 lg:grid-cols-2">
         {PRIORITY_ORDER.map((priority) => (
-          <PriorityCard
-            key={priority}
-            priority={priority}
-            items={byPriority?.[priority] ?? null}
-          />
+          <PriorityCard key={priority} priority={priority} items={byPriority?.[priority] ?? null} />
         ))}
       </section>
 
@@ -159,21 +153,20 @@ function OverallBar({ value: p }: { value: ReturnType<typeof progress> | null })
           </span>
         </div>
         <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
-          <div className="bg-emerald-500 h-full transition-all" style={{ width: `${p.percent}%` }} />
+          <div
+            className="bg-emerald-500 h-full transition-all"
+            style={{ width: `${p.percent}%` }}
+          />
         </div>
-        <p className="text-muted-foreground text-xs">{p.percent}% complete across every priority.</p>
+        <p className="text-muted-foreground text-xs">
+          {p.percent}% complete across every priority.
+        </p>
       </CardContent>
     </Card>
   );
 }
 
-function PriorityCard({
-  priority,
-  items,
-}: {
-  priority: IssuePriority;
-  items: Issue[] | null;
-}) {
+function PriorityCard({ priority, items }: { priority: IssuePriority; items: Issue[] | null }) {
   const style = PRIORITY_STYLE[priority];
   const Icon = style.icon;
   const p = items ? progress(items) : null;

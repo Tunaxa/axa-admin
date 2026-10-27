@@ -109,7 +109,7 @@ export function DashboardView() {
   const recent = React.useMemo(() => (issues ?? []).slice(0, 6), [issues]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-7 p-6 lg:p-8">
+    <div className="flex flex-col gap-7 p-6 lg:p-8">
       <Hero name={personFromEmail(me?.email ?? null)} />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -120,13 +120,7 @@ export function DashboardView() {
           icon={LayoutDashboard}
           tone="brand"
         />
-        <StatTile
-          label="Open"
-          value={stats?.open}
-          loading={!stats}
-          icon={Flame}
-          tone="amber"
-        />
+        <StatTile label="Open" value={stats?.open} loading={!stats} icon={Flame} tone="amber" />
         <StatTile
           label="In progress"
           value={stats?.inProgress}
@@ -318,7 +312,9 @@ function StatTile({
         aria-hidden
       />
       <CardContent className="flex items-center gap-3 pt-5">
-        <span className={`${toneConf.bg} ${toneConf.text} grid size-10 shrink-0 place-items-center rounded-xl`}>
+        <span
+          className={`${toneConf.bg} ${toneConf.text} grid size-10 shrink-0 place-items-center rounded-xl`}
+        >
           <Icon className="size-5" aria-hidden />
         </span>
         <div className="flex min-w-0 flex-1 flex-col">

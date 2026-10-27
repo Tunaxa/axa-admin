@@ -1,9 +1,10 @@
 'use client';
 
 import { cn } from 'cn';
-import { LayoutGrid, List } from 'lucide-react';
+import { LayoutGrid, List, UserPlus } from 'lucide-react';
 import * as React from 'react';
 
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -13,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+import { InviteMemberDialog } from './invite-member-dialog';
 import { Avatar, OwnershipTags, RoleBadge } from './member-bits';
 import { fetchRoster } from './roster-api';
 import type { RosterMember } from './types';
@@ -37,26 +39,23 @@ export function RosterView() {
   const [members, setMembers] = React.useState<RosterMember[]>([]);
   const [state, setState] = React.useState<LoadState>('loading');
   const [error, setError] = React.useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    let cancelled = false;
-
+  const reload = React.useCallback(() => {
     fetchRoster()
       .then((loaded) => {
-        if (cancelled) return;
         setMembers(loaded);
         setState('ready');
       })
       .catch((cause: unknown) => {
-        if (cancelled) return;
         setError(cause instanceof Error ? cause.message : 'Could not load the roster');
         setState('failed');
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  React.useEffect(() => {
+    reload();
+  }, [reload]);
 
   if (state === 'loading') {
     return <p className="text-muted-foreground p-4 text-sm">Loading the roster…</p>;
@@ -114,7 +113,21 @@ export function RosterView() {
           <span className="tabular-nums">{members.length}</span>{' '}
           {members.length === 1 ? 'member' : 'members'}
         </span>
+
+        <Button size="sm" className="ml-auto" onClick={() => setInviteOpen(true)}>
+          <UserPlus className="size-3.5" />
+          Ajouter un membre
+        </Button>
       </div>
+
+      <InviteMemberDialog
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onDone={() => {
+          setInviteOpen(false);
+          reload();
+        }}
+      />
 
       <div className="min-h-0 flex-1 overflow-auto">
         {members.length === 0 ? (

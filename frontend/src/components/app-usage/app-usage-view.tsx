@@ -60,7 +60,7 @@ export function AppUsageView() {
   }, [snapshots]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-6">
       <header className="flex items-start gap-3">
         <span className="bg-primary/10 text-primary grid size-10 shrink-0 place-items-center rounded-lg">
           <Activity className="size-5" aria-hidden />
@@ -191,15 +191,7 @@ function StatCard({
   );
 }
 
-function Row({
-  label,
-  value,
-  wide,
-}: {
-  label: string;
-  value: React.ReactNode;
-  wide?: boolean;
-}) {
+function Row({ label, value, wide }: { label: string; value: React.ReactNode; wide?: boolean }) {
   return (
     <>
       <dt className={`text-muted-foreground ${wide ? 'col-span-2' : ''}`}>{label}</dt>

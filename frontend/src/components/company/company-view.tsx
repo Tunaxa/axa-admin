@@ -1,8 +1,20 @@
 'use client';
 
-import { BarChart3, Building2, CheckCircle2, Clock, Users, XCircle } from 'lucide-react';
+import {
+  BarChart3,
+  Building2,
+  CheckCircle2,
+  Clock,
+  PieChart,
+  TrendingUp,
+  Users,
+  XCircle,
+} from 'lucide-react';
 import * as React from 'react';
 
+import { BarChart } from '@/components/ui/charts/bar-chart';
+import { DonutChart } from '@/components/ui/charts/donut-chart';
+import { Gauge } from '@/components/ui/charts/gauge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch } from '@/lib/api';
@@ -47,18 +59,49 @@ export function CompanyView() {
       );
   }, []);
 
+  const statusData = React.useMemo(() => {
+    if (!kpis) return [];
+    return Object.entries(kpis.requests.byStatus).map(([label, value]) => ({
+      label: label.replace(/_/g, ' '),
+      value,
+    }));
+  }, [kpis]);
+
+  const appData = React.useMemo(() => {
+    if (!kpis) return [];
+    return Object.entries(kpis.requests.byApp).map(([label, value]) => ({
+      label: appLabel(label),
+      value,
+    }));
+  }, [kpis]);
+
+  const decisionsData = React.useMemo(() => {
+    if (!kpis) return [];
+    return [
+      { label: 'Approved', value: kpis.decisions.approved },
+      { label: 'Rejected', value: kpis.decisions.rejected },
+      { label: 'Sent back', value: kpis.decisions.sentBack },
+    ].filter((d) => d.value > 0);
+  }, [kpis]);
+
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-6">
       <header className="flex items-start gap-3">
-        <span className="bg-primary/10 text-primary grid size-10 shrink-0 place-items-center rounded-lg">
+        <span className="bg-primary/10 text-primary grid size-10 shrink-0 place-items-center rounded-xl">
           <Building2 className="size-5" aria-hidden />
         </span>
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold tracking-tight">Company</h1>
           <p className="text-muted-foreground text-sm">
-            Provisioning pipeline KPIs across the organization.
+            KPIs du pipeline de provisioning sur la période courante.
           </p>
         </div>
+        {kpis ? (
+          <span className="text-muted-foreground border-border/70 rounded-full border px-2.5 py-1 text-xs">
+            {new Date(kpis.window.from).toLocaleDateString()} →{' '}
+            {new Date(kpis.window.to).toLocaleDateString()}
+          </span>
+        ) : null}
       </header>
 
       {error ? (
@@ -68,13 +111,7 @@ export function CompanyView() {
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          icon={Users}
-          label="Raised"
-          value={kpis?.requests.raised}
-          loading={!kpis}
-          hint="in the current window"
-        />
+        <StatCard icon={Users} label="Raised" value={kpis?.requests.raised} loading={!kpis} />
         <StatCard
           icon={Clock}
           label="Open"
@@ -98,112 +135,119 @@ export function CompanyView() {
         />
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="size-4" aria-hidden />
-              Decisions
+              <PieChart className="size-4" aria-hidden />
+              Requêtes par statut
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3">
+          <CardContent>
             {!kpis ? (
-              <>
-                <Skeleton className="h-5 w-3/4" />
-                <Skeleton className="h-5 w-1/2" />
-                <Skeleton className="h-5 w-2/3" />
-              </>
+              <Skeleton className="h-40 w-full" />
             ) : (
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                <Line
-                  label="Decided"
-                  value={kpis.decisions.decided}
-                />
-                <Line
-                  label="Approval rate"
-                  value={
-                    kpis.decisions.approvalRate === null
-                      ? '—'
-                      : `${Math.round(kpis.decisions.approvalRate * 100)}%`
-                  }
-                />
-                <Line
-                  label="Sent back"
-                  value={kpis.decisions.sentBack}
-                />
-                <Line
-                  label="Median time"
-                  value={fmtHours(kpis.decisions.hoursToDecision.median)}
-                />
-                <Line
-                  label="P90 time"
-                  value={fmtHours(kpis.decisions.hoursToDecision.p90)}
-                />
-                <Line
-                  label="Checkout links"
-                  value={kpis.payments.checkoutLinksIssued}
-                />
-              </dl>
+              <DonutChart data={statusData} centreLabel="Requêtes" />
             )}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-1">
           <CardHeader>
-            <CardTitle>By status</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <PieChart className="size-4" aria-hidden />
+              Décisions
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {!kpis ? (
-              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-40 w-full" />
             ) : (
-              <ul className="flex flex-col gap-2 text-sm">
-                {Object.entries(kpis.requests.byStatus).map(([status, count]) => (
-                  <li key={status} className="flex items-center justify-between gap-2">
-                    <span className="capitalize">{status.replace(/_/g, ' ')}</span>
-                    <span className="text-muted-foreground tabular-nums">{count}</span>
-                  </li>
-                ))}
-                {Object.keys(kpis.requests.byStatus).length === 0 ? (
-                  <li className="text-muted-foreground">No requests in the window.</li>
-                ) : null}
-              </ul>
+              <DonutChart data={decisionsData} centreLabel="Décisions" />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="size-4" aria-hidden />
+              Taux d&apos;approbation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-3">
+            {!kpis ? (
+              <Skeleton className="h-24 w-full" />
+            ) : (
+              <>
+                <Gauge
+                  value={kpis.decisions.approvalRate}
+                  label="Approved / decided"
+                  tone={
+                    kpis.decisions.approvalRate === null
+                      ? 'brand'
+                      : kpis.decisions.approvalRate >= 0.7
+                        ? 'emerald'
+                        : kpis.decisions.approvalRate >= 0.4
+                          ? 'amber'
+                          : 'rose'
+                  }
+                />
+                <div className="grid w-full grid-cols-2 gap-3 text-xs">
+                  <HoursLine
+                    label="Temps médian"
+                    value={fmtHours(kpis.decisions.hoursToDecision.median)}
+                  />
+                  <HoursLine label="P90" value={fmtHours(kpis.decisions.hoursToDecision.p90)} />
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>By application</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!kpis ? (
-            <Skeleton className="h-20 w-full" />
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(kpis.requests.byApp).map(([app, count]) => (
-                <span
-                  key={app}
-                  className="bg-muted inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm"
-                >
-                  <span className="text-foreground font-medium">{appLabel(app)}</span>
-                  <span className="text-muted-foreground tabular-nums">{count}</span>
-                </span>
-              ))}
-              {Object.keys(kpis.requests.byApp).length === 0 ? (
-                <p className="text-muted-foreground text-sm">No requests in the window.</p>
-              ) : null}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <section className="grid gap-4 lg:grid-cols-5">
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="size-4" aria-hidden />
+              Requêtes par application
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!kpis ? <Skeleton className="h-32 w-full" /> : <BarChart data={appData} />}
+          </CardContent>
+        </Card>
 
-      {kpis ? (
-        <p className="text-muted-foreground text-xs">
-          Window: {new Date(kpis.window.from).toLocaleDateString()} →{' '}
-          {new Date(kpis.window.to).toLocaleDateString()}
-        </p>
-      ) : null}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="size-4" aria-hidden />
+              Paiements
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {!kpis ? (
+              <Skeleton className="h-32 w-full" />
+            ) : (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-muted-foreground text-xs uppercase tracking-wider">
+                    Liens Stripe émis
+                  </span>
+                  <span className="text-foreground text-2xl font-semibold tabular-nums">
+                    {kpis.payments.checkoutLinksIssued}
+                  </span>
+                </div>
+                <p className="text-muted-foreground rounded-md border border-dashed p-2.5 text-[11px] leading-relaxed">
+                  Paiements confirmés et taux de conversion indisponibles :{' '}
+                  {kpis.payments.paid.unavailable}.
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }
@@ -214,16 +258,22 @@ function StatCard({
   value,
   loading,
   tone = 'default',
-  hint,
 }: {
   icon: typeof Users;
   label: string;
   value?: number;
   loading: boolean;
   tone?: 'default' | 'amber' | 'rose' | 'emerald';
-  hint?: string;
 }) {
-  const toneClass =
+  const toneBg =
+    tone === 'amber'
+      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+      : tone === 'rose'
+        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+        : tone === 'emerald'
+          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          : 'bg-primary/10 text-primary';
+  const toneText =
     tone === 'amber'
       ? 'text-amber-600 dark:text-amber-400'
       : tone === 'rose'
@@ -234,28 +284,31 @@ function StatCard({
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-1 pt-5">
-        <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs uppercase tracking-wide">
-          <Icon className="size-3.5" aria-hidden />
-          {label}
+      <CardContent className="flex items-center gap-3 pt-5">
+        <span className={`${toneBg} grid size-10 shrink-0 place-items-center rounded-xl`}>
+          <Icon className="size-5" aria-hidden />
         </span>
-        {loading ? (
-          <Skeleton className="h-8 w-16" />
-        ) : (
-          <span className={`text-3xl font-semibold tabular-nums ${toneClass}`}>{value ?? 0}</span>
-        )}
-        {hint ? <span className="text-muted-foreground text-xs">{hint}</span> : null}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+            {label}
+          </span>
+          {loading ? (
+            <Skeleton className="mt-1 h-7 w-14" />
+          ) : (
+            <span className={`text-2xl font-semibold tabular-nums ${toneText}`}>{value ?? 0}</span>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function Line({ label, value }: { label: string; value: string | number }) {
+function HoursLine({ label, value }: { label: string; value: string }) {
   return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium tabular-nums">{value}</dd>
-    </>
+    <div className="border-border/60 bg-muted/30 flex flex-col gap-0.5 rounded-md border p-2">
+      <span className="text-muted-foreground uppercase tracking-wider">{label}</span>
+      <span className="text-foreground font-semibold tabular-nums">{value}</span>
+    </div>
   );
 }
 

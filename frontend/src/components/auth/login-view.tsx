@@ -174,16 +174,25 @@ export function LoginView() {
               </label>
 
               <label className="grid gap-1 text-sm">
-                <span className="text-muted-foreground">Organization</span>
+                <span className="text-muted-foreground flex items-center justify-between gap-2">
+                  <span>Workspace</span>
+                  <span className="text-[10px] font-normal uppercase tracking-wider opacity-60">
+                    pas un rôle
+                  </span>
+                </span>
                 <Input
                   type="text"
                   autoComplete="organization"
                   value={orgSlug}
-                  onChange={(e) => setOrgSlug(e.target.value)}
+                  onChange={(e) => setOrgSlug(e.target.value.toLowerCase())}
                   placeholder="axa"
+                  pattern="^[a-z0-9-]+$"
+                  title="Lowercase letters, digits or hyphens"
                 />
                 <span className="text-muted-foreground text-[11px]">
-                  The tenant slug your admin shared with you.
+                  Le slug de ton organisation (par défaut :{' '}
+                  <code className="bg-muted/60 rounded px-1 font-mono text-[10px]">axa</code>
+                  ). Ce n&apos;est pas ton rôle.
                 </span>
               </label>
 

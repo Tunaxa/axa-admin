@@ -1,11 +1,7 @@
 import { apiFetch } from '@/lib/api';
 
 export type AccountRequestStatus =
-  | 'pending'
-  | 'approved'
-  | 'rejected'
-  | 'needs_more_info'
-  | 'withdrawn';
+  'pending' | 'approved' | 'rejected' | 'needs_more_info' | 'withdrawn';
 
 export type AppKey = 'axa_admin' | 'axacrm' | 'axapass' | 'website';
 
@@ -35,10 +31,12 @@ export interface CreateRequestInput {
   note?: string;
 }
 
-export async function fetchRequests(filters: {
-  status?: AccountRequestStatus;
-  app?: AppKey;
-} = {}): Promise<AccountRequest[]> {
+export async function fetchRequests(
+  filters: {
+    status?: AccountRequestStatus;
+    app?: AppKey;
+  } = {},
+): Promise<AccountRequest[]> {
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
   if (filters.app) params.set('app', filters.app);
@@ -74,5 +72,30 @@ export async function needsMoreInfo(id: string, note: string): Promise<AccountRe
   return apiFetch<AccountRequest>(`/requests/${id}/needs-more-info`, {
     method: 'POST',
     body: JSON.stringify({ note }),
+  });
+}
+
+export type Role = 'owner' | 'pm_lead' | 'dev_team_leader' | 'developer' | 'designer' | 'viewer';
+
+export interface ProvisionInput {
+  password: string;
+  role: Role;
+  team?: AppKey;
+  decisionNote?: string;
+  name?: string;
+}
+
+export interface ProvisionedAccount {
+  request: AccountRequest;
+  user: { id: string; email: string; name: string; role: Role };
+}
+
+export async function provisionRequest(
+  id: string,
+  input: ProvisionInput,
+): Promise<ProvisionedAccount> {
+  return apiFetch<ProvisionedAccount>(`/requests/${id}/provision`, {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }

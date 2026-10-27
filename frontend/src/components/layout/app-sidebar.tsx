@@ -25,7 +25,10 @@ export function AppSidebar() {
       <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
         <span className="bg-primary text-primary-foreground relative grid size-8 place-items-center rounded-lg text-sm font-bold shadow-sm">
           A
-          <span className="bg-primary/40 absolute inset-0 -z-10 scale-110 rounded-lg blur-md" aria-hidden />
+          <span
+            className="bg-primary/40 absolute inset-0 -z-10 scale-110 rounded-lg blur-md"
+            aria-hidden
+          />
         </span>
         <div className="flex min-w-0 flex-col leading-tight">
           <span className="truncate text-sm font-semibold tracking-tight">AXA Admin</span>
@@ -77,7 +80,9 @@ export function AppSidebar() {
                           <Icon
                             className={cn(
                               'size-4 shrink-0 transition-colors',
-                              isCurrent ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+                              isCurrent
+                                ? 'text-primary'
+                                : 'text-muted-foreground group-hover:text-foreground',
                             )}
                             aria-hidden
                           />
@@ -107,7 +112,8 @@ export function AppSidebar() {
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="text-foreground text-xs font-medium">Prod-ready in flight</span>
             <span className="text-muted-foreground text-[11px] leading-snug">
-              Press <kbd className="bg-muted rounded border px-1 font-mono text-[10px]">?</kbd> to see every shortcut.
+              Press <kbd className="bg-muted rounded border px-1 font-mono text-[10px]">?</kbd> to
+              see every shortcut.
             </span>
           </div>
         </div>

@@ -139,6 +139,9 @@ model Project {
   name           String
   description    String?
   status         ProjectStatus @default(backlog)
+  /// Completion in integer percent, 0..100. Set by an admin on the project;
+  /// derived progress (`done / total` issues) stays in `KpisService`.
+  completionPercent Int        @default(0)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

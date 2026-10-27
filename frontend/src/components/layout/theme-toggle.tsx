@@ -32,9 +32,27 @@ export function ThemeToggle() {
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Appearance</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <ThemeOption value="light" label="Light" icon={Sun} active={theme === 'light'} onSelect={() => setTheme('light')} />
-        <ThemeOption value="dark" label="Dark" icon={Moon} active={theme === 'dark'} onSelect={() => setTheme('dark')} />
-        <ThemeOption value="system" label="System" icon={Monitor} active={theme === 'system'} onSelect={() => setTheme('system')} />
+        <ThemeOption
+          value="light"
+          label="Light"
+          icon={Sun}
+          active={theme === 'light'}
+          onSelect={() => setTheme('light')}
+        />
+        <ThemeOption
+          value="dark"
+          label="Dark"
+          icon={Moon}
+          active={theme === 'dark'}
+          onSelect={() => setTheme('dark')}
+        />
+        <ThemeOption
+          value="system"
+          label="System"
+          icon={Monitor}
+          active={theme === 'system'}
+          onSelect={() => setTheme('system')}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -56,9 +74,7 @@ function ThemeOption({
     <DropdownMenuItem onSelect={onSelect}>
       <Icon className="size-4" />
       <span>{label}</span>
-      {active ? (
-        <span className="bg-primary ml-auto size-1.5 rounded-full" aria-hidden />
-      ) : null}
+      {active ? <span className="bg-primary ml-auto size-1.5 rounded-full" aria-hidden /> : null}
     </DropdownMenuItem>
   );
 }

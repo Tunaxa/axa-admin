@@ -25,7 +25,10 @@ function hashHue(key: string): string {
 }
 
 function initialsOf(name: string): string {
-  const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
+  const parts = name
+    .trim()
+    .split(/[\s._-]+/)
+    .filter(Boolean);
   if (parts.length === 0) return '?';
   if (parts.length === 1) return (parts[0] ?? '').slice(0, 2).toUpperCase();
   return `${(parts[0] ?? '')[0] ?? ''}${(parts[1] ?? '')[0] ?? ''}`.toUpperCase();
@@ -44,13 +47,7 @@ const SIZE_CLASS = {
   lg: 'size-10 text-sm',
 };
 
-export function Avatar({
-  name,
-  seed,
-  size = 'md',
-  className,
-  ...props
-}: AvatarProps) {
+export function Avatar({ name, seed, size = 'md', className, ...props }: AvatarProps) {
   const tone = hashHue(seed ?? name);
   return (
     <span

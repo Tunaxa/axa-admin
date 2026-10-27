@@ -17,12 +17,23 @@ import { TeamsService } from '../integrations/teams.service.js';
 import { EventsService } from '../events/events.service.js';
 import { MailService, type RequestOutcome } from '../mail/mail.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import * as bcrypt from 'bcrypt';
+
 import type { ApproveRequestDto } from './dto/approve-request.dto.js';
 import type { CreateRequestDto } from './dto/create-request.dto.js';
 import type { DecideRequestDto } from './dto/decide-request.dto.js';
 import type { ListRequestsQuery } from './dto/list-requests.query.js';
+import type { ProvisionRequestDto } from './dto/provision-request.dto.js';
 import type { UpdateRequestDto } from './dto/update-request.dto.js';
 import { canTransition, isOpen, TRANSITIONS } from './request-transitions.js';
+
+const BCRYPT_ROUNDS = 12;
+
+/** Shape returned by the provisioning endpoint — admins need the created user. */
+export interface ProvisionedAccount {
+  request: AccountRequest;
+  user: { id: string; email: string; name: string; role: string };
+}
 
 @Injectable()
 export class AccountRequestsService {
@@ -368,5 +379,95 @@ export class AccountRequestsService {
     this.logger.log(
       `Request ${request.id} (${request.app}) ${status} for ${request.requesterEmail}`,
     );
+  }
+
+  /**
+   * Approves a request by creating an internal user account for the
+   * requester — password set by the admin, role attributed and an
+   * `AppOwnership` row scoping it to the team (= AXA app).
+   *
+   * All writes run inside one Prisma transaction so a half-provisioned user
+   * cannot be left behind; the request is marked approved only if everything
+   * else landed.
+   */
+  async provision(
+    organizationId: string,
+    deciderId: string,
+    id: string,
+    dto: ProvisionRequestDto,
+  ): Promise<ProvisionedAccount> {
+    const request = await this.assertOpen(organizationId, id, deciderId);
+
+    const existing = await this.prisma.user.findUnique({
+      where: {
+        organizationId_email: {
+          organizationId,
+          email: request.requesterEmail,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      throw new ConflictException(
+        'A user with that email already exists in this organization',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const team = dto.team ?? request.app;
+    const displayName = dto.name?.trim() || request.requesterName;
+
+    const [createdUser, approved] = await this.prisma.$transaction(
+      async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            organizationId,
+            email: request.requesterEmail,
+            name: displayName,
+            passwordHash,
+          },
+          select: { id: true, email: true, name: true },
+        });
+
+        const member = await tx.teamMember.create({
+          data: {
+            organizationId,
+            userId: user.id,
+            role: dto.role,
+          },
+        });
+
+        await tx.appOwnership.create({
+          data: {
+            organizationId,
+            teamMemberId: member.id,
+            app: team,
+            role: dto.role,
+          },
+        });
+
+        const decided = await tx.accountRequest.update({
+          where: { id: request.id },
+          data: {
+            status: AccountRequestStatus.approved,
+            decidedById: deciderId,
+            decidedAt: new Date(),
+            decisionNote:
+              dto.decisionNote ??
+              `Account provisioned (${dto.role} on ${team})`,
+          },
+        });
+
+        return [user, decided];
+      },
+    );
+
+    this.announce(approved, 'approved');
+
+    return {
+      request: approved,
+      user: { ...createdUser, role: dto.role },
+    };
   }
 }

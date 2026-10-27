@@ -45,7 +45,11 @@ export function HealthBadge() {
     >
       <span className="relative flex size-1.5">
         <span
-          className={cn('absolute inline-flex size-full rounded-full opacity-70', tone, status === 'ok' && 'animate-ping')}
+          className={cn(
+            'absolute inline-flex size-full rounded-full opacity-70',
+            tone,
+            status === 'ok' && 'animate-ping',
+          )}
         />
         <span className={cn('relative inline-flex size-1.5 rounded-full', tone)} aria-hidden />
       </span>
