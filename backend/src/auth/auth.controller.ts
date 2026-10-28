@@ -4,7 +4,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotFoundException,
   Post,
   Query,
   Req,
@@ -12,10 +11,8 @@ import {
 
 import type { AppKey } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service.js';
 import { AuthService, type AuthResult } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
-import { RegisterDto } from './dto/register.dto.js';
 import type { AuthenticatedRequest } from './jwt-auth.guard.js';
 import type { JwtPayload } from './jwt-payload.js';
 import { AuthenticatedOnly, Public } from './permissions.decorator.js';
@@ -29,29 +26,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly permissions: PermissionsService,
-    private readonly prisma: PrismaService,
   ) {}
-
-  /**
-   * Resolves an organization's id from its slug, so the login form can take a
-   * human-friendly slug instead of a UUID.
-   */
-  @Public()
-  @Get('organizations/by-slug')
-  async resolveOrgSlug(
-    @Query('slug') slug: string,
-  ): Promise<{ id: string; slug: string; name: string }> {
-    if (!slug) throw new NotFoundException('Organization not found');
-    const org = await this.prisma.organization.findUnique({ where: { slug } });
-    if (!org) throw new NotFoundException('Organization not found');
-    return { id: org.id, slug: org.slug, name: org.name };
-  }
-
-  @Public()
-  @Post('register')
-  register(@Body() dto: RegisterDto): Promise<AuthResult> {
-    return this.auth.register(dto);
-  }
 
   @Public()
   @Post('login')

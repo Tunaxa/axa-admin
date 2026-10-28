@@ -11,6 +11,22 @@ export interface EffectivePermissions {
   /** True when a per-application ownership decided it rather than the org role. */
   scopedToApp: boolean;
   permissions: readonly Permission[];
+  /** The department the person works in. Null for the CEO, who spans them all. */
+  departmentId: string | null;
+}
+
+/**
+ * Which slice of the company a person may see.
+ *
+ * The role says what kinds of action are open; the scope says over what. The
+ * CEO (`seeAll`) spans every department, a manager is held to their own, and
+ * everyone else sees only what is assigned to them inside it.
+ */
+export interface AccessScope {
+  role: Role | null;
+  departmentId: string | null;
+  seeAll: boolean;
+  isManager: boolean;
 }
 
 /**
@@ -40,6 +56,7 @@ export class PermissionsService {
       where: { userId, organizationId },
       select: {
         role: true,
+        departmentId: true,
         ownerships: app
           ? { where: { app }, select: { role: true }, take: 1 }
           : false,
@@ -47,7 +64,12 @@ export class PermissionsService {
     });
 
     if (!member) {
-      return { role: null, scopedToApp: false, permissions: [] };
+      return {
+        role: null,
+        scopedToApp: false,
+        permissions: [],
+        departmentId: null,
+      };
     }
 
     const ownership = app ? member.ownerships?.[0] : undefined;
@@ -57,6 +79,31 @@ export class PermissionsService {
       role,
       scopedToApp: Boolean(ownership),
       permissions: permissionsFor(role),
+      departmentId: member.departmentId,
+    };
+  }
+
+  /** The slice of the company this person may see. */
+  async scope(organizationId: string, userId: string): Promise<AccessScope> {
+    const member = await this.prisma.teamMember.findFirst({
+      where: { userId, organizationId },
+      select: { role: true, departmentId: true },
+    });
+
+    if (!member) {
+      return {
+        role: null,
+        departmentId: null,
+        seeAll: false,
+        isManager: false,
+      };
+    }
+
+    return {
+      role: member.role,
+      departmentId: member.departmentId,
+      seeAll: member.role === 'owner',
+      isManager: member.role === 'dev_team_leader' || member.role === 'pm_lead',
     };
   }
 

@@ -402,7 +402,7 @@ export class AccountRequestsService {
       where: {
         organizationId_email: {
           organizationId,
-          email: request.requesterEmail,
+          email: request.requesterEmail.toLowerCase(),
         },
       },
       select: { id: true },
@@ -414,8 +414,16 @@ export class AccountRequestsService {
       );
     }
 
+    const department = await this.prisma.department.findFirst({
+      where: { id: dto.departmentId, organizationId },
+      select: { id: true, name: true },
+    });
+
+    if (!department) {
+      throw new ConflictException('Department not found in this organization');
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const team = dto.team ?? request.app;
     const displayName = dto.name?.trim() || request.requesterName;
 
     const [createdUser, approved] = await this.prisma.$transaction(
@@ -423,27 +431,19 @@ export class AccountRequestsService {
         const user = await tx.user.create({
           data: {
             organizationId,
-            email: request.requesterEmail,
+            email: request.requesterEmail.toLowerCase(),
             name: displayName,
             passwordHash,
           },
           select: { id: true, email: true, name: true },
         });
 
-        const member = await tx.teamMember.create({
+        await tx.teamMember.create({
           data: {
             organizationId,
             userId: user.id,
             role: dto.role,
-          },
-        });
-
-        await tx.appOwnership.create({
-          data: {
-            organizationId,
-            teamMemberId: member.id,
-            app: team,
-            role: dto.role,
+            departmentId: department.id,
           },
         });
 
@@ -455,11 +455,11 @@ export class AccountRequestsService {
             decidedAt: new Date(),
             decisionNote:
               dto.decisionNote ??
-              `Account provisioned (${dto.role} on ${team})`,
+              `Account created (${dto.role} in ${department.name})`,
           },
         });
 
-        return [user, decided];
+        return [user, decided] as const;
       },
     );
 

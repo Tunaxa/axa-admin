@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { CommandPalette } from './command-palette';
 import { HealthBadge } from './health-badge';
 import { NAV_ITEMS } from './nav-items';
+import { NotificationsBell } from './notifications-bell';
 import { ShortcutsDialog } from './shortcuts-dialog';
 import { ThemeToggle } from './theme-toggle';
 import { UserMenu } from './user-menu';
@@ -88,6 +89,7 @@ export function TopBar() {
           <Search className="size-4" />
         </Button>
         <HealthBadge />
+        <NotificationsBell />
         <ThemeToggle />
         <UserMenu onOpenShortcuts={() => setShortcutsOpen(true)} />
       </div>

@@ -51,6 +51,8 @@ model Organization {
   orgChart           OrgChart?
   docsPages          DocsPage[]
   accountRequests    AccountRequest[]
+  notifications      Notification[]
+  departments        Department[]
 
   @@map("organizations")
 }
@@ -123,6 +125,9 @@ model User {
   decidedRequests AccountRequest[] @relation("DecidedRequests")
   authoredDocs    DocsPage[]       @relation("DocsPageAuthor")
   editedDocs      DocsPage[]       @relation("DocsPageEditor")
+  notifications   Notification[]   @relation("NotificationRecipient")
+  sentNotifications Notification[] @relation("NotificationActor")
+  managedDepartments Department[]  @relation("DepartmentManager")
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
@@ -142,15 +147,19 @@ model Project {
   /// Completion in integer percent, 0..100. Set by an admin on the project;
   /// derived progress (`done / total` issues) stays in `KpisService`.
   completionPercent Int        @default(0)
+  /// The department that owns the project; its manager runs it. Null only for legacy rows.
+  departmentId   String?       @db.Uuid
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   issues       Issue[]
 
   @@index([organizationId])
   @@index([workspaceId])
+  @@index([departmentId])
   @@map("projects")
 }
 
@@ -187,6 +196,8 @@ model Issue {
   assigneeId     String?       @db.Uuid
   /// The AXA application this issue delivers against, when it targets one.
   app            AppKey?
+  /// Which department the work belongs to. Drives who may see it.
+  departmentId   String?       @db.Uuid
   /// When the issue last moved into `done`. Null while it is open, and set back
   /// to null if it is reopened. Distinct from `updatedAt`, which any later edit
   /// moves — renaming a finished issue must not change the day it was closed.
@@ -197,6 +208,7 @@ model Issue {
   organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   project      Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  department   Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   assignee     User?              @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
   labels       IssueLabel[]
   dailyReports DailyReportIssue[]
@@ -207,6 +219,7 @@ model Issue {
   @@index([workspaceId])
   @@index([projectId])
   @@index([assigneeId])
+  @@index([departmentId])
   // One `AXA-123` per tenant, and the lookup a branch name resolves through.
   @@unique([organizationId, key])
   // Board and list views read one workspace filtered by status constantly.
@@ -350,17 +363,21 @@ model TeamMember {
   userId         String   @db.Uuid
   /// Applies wherever no per-application ownership overrides it.
   role           Role     @default(viewer)
+  /// The department this person works in. Null for the CEO, who sits above them all.
+  departmentId   String?  @db.Uuid
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   ownerships   AppOwnership[]
   profile      DevProfile?
 
   // One membership per person per tenant.
   @@unique([userId])
   @@index([organizationId])
+  @@index([departmentId])
   @@map("team_members")
 }
 
@@ -700,4 +717,69 @@ model DocsPage {
   @@index([authorId])
   @@index([lastEditedById])
   @@map("docs_pages")
+}
+
+/// Per-user notification: the little bell in the top bar.
+///
+/// Payload is intentionally shallow — a short `title`, a `body`, a type tag
+/// and an optional link the UI uses to deep-link the recipient to the thing
+/// that triggered it. Service classes publish by calling `NotificationsService.push`.
+model Notification {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  recipientId    String             @db.Uuid
+  /// Who caused the notification. Null when it comes from the system.
+  actorId        String?            @db.Uuid
+  type           NotificationType
+  title          String
+  body           String?
+  link           String?
+  readAt         DateTime?
+  createdAt      DateTime           @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipient    User         @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, recipientId, readAt])
+  @@index([organizationId, createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  task_assigned
+  task_status_changed
+  task_mentioned
+  team_joined
+  member_invited
+  request_decided
+  system
+
+  @@map("notification_type")
+}
+
+
+/// A department of the company, created by the CEO and run by one manager.
+///
+/// People, projects and issues hang off a department; what somebody may see is
+/// decided by which department they sit in.
+model Department {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  description    String?
+  /// The user who runs the department. Null while the seat is empty.
+  managerId      String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  manager      User?         @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
+  members      TeamMember[]
+  projects     Project[]
+  issues       Issue[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("departments")
 }

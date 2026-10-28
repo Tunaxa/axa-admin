@@ -34,6 +34,8 @@ export interface Issue {
   priority: IssuePriority;
   app: AppKey | null;
   assigneeId: string | null;
+  projectId?: string | null;
+  departmentId?: string | null;
 }
 
 /** A container issues belong to. */

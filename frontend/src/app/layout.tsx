@@ -5,7 +5,6 @@ import { cn } from 'cn';
 import { AppShell } from '@/components/layout/app-shell';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { ToastProvider } from '@/components/providers/toast-provider';
-import { IssuesProvider } from '@/components/work/issues-provider';
 
 import './globals.css';
 
@@ -29,9 +28,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="bg-background text-foreground antialiased">
         <ThemeProvider>
           <ToastProvider>
-            <IssuesProvider>
-              <AppShell>{children}</AppShell>
-            </IssuesProvider>
+            <AppShell>{children}</AppShell>
           </ToastProvider>
         </ThemeProvider>
       </body>

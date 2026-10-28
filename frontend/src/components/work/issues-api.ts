@@ -18,6 +18,8 @@ interface IssueResponse {
   priority: IssuePriority;
   app: Issue['app'];
   assigneeId: string | null;
+  projectId: string | null;
+  departmentId: string | null;
 }
 
 function toIssue(response: IssueResponse): Issue {
@@ -29,6 +31,8 @@ function toIssue(response: IssueResponse): Issue {
     priority: response.priority,
     app: response.app,
     assigneeId: response.assigneeId,
+    projectId: response.projectId,
+    departmentId: response.departmentId,
   };
 }
 
@@ -59,6 +63,10 @@ export interface CreateIssueInput {
   workspaceId: string;
   title: string;
   description?: string;
+  projectId?: string;
+  /** Only the CEO chooses; everybody else inherits their own department. */
+  departmentId?: string;
+  assigneeId?: string;
 }
 
 export async function createIssue(input: CreateIssueInput): Promise<Issue> {

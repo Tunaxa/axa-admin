@@ -5,6 +5,8 @@ import { Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { useAccess } from '@/components/providers/access-provider';
+
 import { NAV_GROUPS, NAV_ITEMS } from './nav-items';
 
 /**
@@ -19,6 +21,7 @@ import { NAV_GROUPS, NAV_ITEMS } from './nav-items';
  */
 export function AppSidebar() {
   const pathname = usePathname();
+  const access = useAccess();
 
   return (
     <aside className="bg-sidebar text-sidebar-foreground hidden w-64 shrink-0 flex-col border-r border-sidebar-border md:flex">
@@ -38,7 +41,9 @@ export function AppSidebar() {
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="Main">
         {NAV_GROUPS.map((group) => {
-          const items = NAV_ITEMS.filter((item) => item.group === group.id);
+          const items = NAV_ITEMS.filter(
+            (item) => item.group === group.id && access.can(item.permission),
+          );
           if (items.length === 0) return null;
 
           return (

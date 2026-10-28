@@ -14,14 +14,13 @@ import {
 
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
-import { CreateTeamMemberDto } from './dto/create-team-member.dto.js';
 import { InviteMemberDto } from './dto/invite-member.dto.js';
 import { UpdateTeamMemberDto } from './dto/update-team-member.dto.js';
 import { type RosterEntry, RosterService } from './roster.service.js';
 
 /**
- * The tenant comes from the verified token, never from the request, so every
- * route below is scoped to the caller's organization.
+ * The tenant and the department come from the verified token, never from the
+ * request, so every route below is scoped to the caller's own slice.
  */
 @Controller('team-members')
 export class RosterController {
@@ -30,22 +29,12 @@ export class RosterController {
   @RequirePermissions('team:read')
   @Get()
   list(@Req() request: AuthenticatedRequest): Promise<RosterEntry[]> {
-    return this.roster.list(request.user.org);
-  }
-
-  @RequirePermissions('team:manage')
-  @Post()
-  add(
-    @Req() request: AuthenticatedRequest,
-    @Body() dto: CreateTeamMemberDto,
-  ): Promise<RosterEntry> {
-    return this.roster.add(request.user.org, dto);
+    return this.roster.list(request.user.org, request.user.sub);
   }
 
   /**
-   * One-shot: create the user, roster row and app ownership together.
-   * Preferred over `POST /team-members` whenever the account does not exist
-   * yet, which is the common CEO / admin add-a-teammate flow.
+   * One-shot: create the user and put them on a department's team.
+   * The CEO picks the department; a manager adds to their own.
    */
   @RequirePermissions('team:manage')
   @Post('invite')
@@ -53,7 +42,7 @@ export class RosterController {
     @Req() request: AuthenticatedRequest,
     @Body() dto: InviteMemberDto,
   ): Promise<RosterEntry> {
-    return this.roster.invite(request.user.org, dto);
+    return this.roster.invite(request.user.org, request.user.sub, dto);
   }
 
   @RequirePermissions('team:manage')
@@ -63,7 +52,7 @@ export class RosterController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTeamMemberDto,
   ): Promise<RosterEntry> {
-    return this.roster.updateRole(request.user.org, id, dto);
+    return this.roster.updateRole(request.user.org, request.user.sub, id, dto);
   }
 
   @RequirePermissions('team:manage')
@@ -73,6 +62,6 @@ export class RosterController {
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
-    return this.roster.remove(request.user.org, id);
+    return this.roster.remove(request.user.org, request.user.sub, id);
   }
 }

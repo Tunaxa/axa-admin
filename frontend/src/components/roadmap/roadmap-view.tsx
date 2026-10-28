@@ -4,6 +4,7 @@ import { ArrowRight, Flag, Flame, Map as MapIcon, Minus, Target } from 'lucide-r
 import Link from 'next/link';
 import * as React from 'react';
 
+import { useAccess } from '@/components/providers/access-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -36,7 +37,7 @@ function groupByPriority(issues: Issue[]): Record<IssuePriority, Issue[]> {
 function groupByProject(issues: Issue[]): Map<string, Issue[]> {
   const out = new Map<string, Issue[]>();
   for (const issue of issues) {
-    const key = issue.app ?? 'unassigned';
+    const key = issue.departmentId ?? 'none';
     const list = out.get(key) ?? [];
     list.push(issue);
     out.set(key, list);
@@ -58,6 +59,7 @@ function progress(items: Issue[]) {
 }
 
 export function RoadmapView() {
+  const access = useAccess();
   const [issues, setIssues] = React.useState<Issue[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -116,7 +118,7 @@ export function RoadmapView() {
 
       <section>
         <h2 className="text-foreground mb-3 text-sm font-semibold uppercase tracking-wide">
-          By product
+          Par département
         </h2>
         <div className="grid gap-4 lg:grid-cols-2">
           {byProject === null ? (
@@ -131,8 +133,14 @@ export function RoadmapView() {
               </CardContent>
             </Card>
           ) : (
-            Array.from(byProject.entries()).map(([app, items]) => (
-              <ProjectCard key={app} name={formatAppLabel(app)} items={items} />
+            Array.from(byProject.entries()).map(([departmentId, items]) => (
+              <ProjectCard
+                key={departmentId}
+                name={
+                  access.departments.find((d) => d.id === departmentId)?.name ?? 'Sans département'
+                }
+                items={items}
+              />
             ))
           )}
         </div>
@@ -272,21 +280,4 @@ function Legend({ tone, label }: { tone: string; label: string }) {
       <span>{label}</span>
     </span>
   );
-}
-
-function formatAppLabel(app: string): string {
-  switch (app) {
-    case 'axa_admin':
-      return 'AXA Admin';
-    case 'axacrm':
-      return 'AXA CRM';
-    case 'axapass':
-      return 'AXA Pass';
-    case 'website':
-      return 'Website';
-    case 'unassigned':
-      return 'Unassigned';
-    default:
-      return app;
-  }
 }

@@ -80,7 +80,7 @@ export type Role = 'owner' | 'pm_lead' | 'dev_team_leader' | 'developer' | 'desi
 export interface ProvisionInput {
   password: string;
   role: Role;
-  team?: AppKey;
+  departmentId: string;
   decisionNote?: string;
   name?: string;
 }

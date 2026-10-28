@@ -12,33 +12,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useAccess } from '@/components/providers/access-provider';
 import { Input } from '@/components/ui/input';
+import { randomPassword } from '@/lib/password';
 import { Textarea } from '@/components/ui/textarea';
 
-import { provisionRequest, type AccountRequest, type AppKey, type Role } from './requests-api';
+import { provisionRequest, type AccountRequest, type Role } from './requests-api';
 
 const ROLES: Array<{ value: Role; label: string }> = [
-  { value: 'owner', label: 'Owner' },
-  { value: 'pm_lead', label: 'PM Lead' },
-  { value: 'dev_team_leader', label: 'Dev Team Leader' },
   { value: 'developer', label: 'Developer' },
   { value: 'designer', label: 'Designer' },
   { value: 'viewer', label: 'Viewer' },
 ];
-
-const APPS: Array<{ id: AppKey; label: string }> = [
-  { id: 'axa_admin', label: 'AXA Admin' },
-  { id: 'axacrm', label: 'AXA CRM' },
-  { id: 'axapass', label: 'AXA Pass' },
-  { id: 'website', label: 'Website' },
-];
-
-function randomPassword(length = 16): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&';
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
-}
 
 /**
  * Modal that provisions an internal account from a request.
@@ -59,7 +44,8 @@ export function ProvisionDialog({
 }) {
   const [password, setPassword] = React.useState(() => randomPassword());
   const [role, setRole] = React.useState<Role>('developer');
-  const [team, setTeam] = React.useState<AppKey>(request.app);
+  const access = useAccess();
+  const [departmentId, setDepartmentId] = React.useState(access.departments[0]?.id ?? '');
   const [name, setName] = React.useState(request.requesterName);
   const [note, setNote] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
@@ -78,7 +64,7 @@ export function ProvisionDialog({
       await provisionRequest(request.id, {
         password,
         role,
-        team,
+        departmentId,
         name: name.trim() || undefined,
         decisionNote: note.trim() || undefined,
       });
@@ -192,15 +178,16 @@ export function ProvisionDialog({
             </label>
 
             <label className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Équipe</span>
+              <span className="text-muted-foreground">Département</span>
               <select
-                value={team}
-                onChange={(e) => setTeam(e.target.value as AppKey)}
+                required
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
                 className="bg-background border-input focus-visible:ring-ring h-9 rounded-md border px-2 text-sm outline-none focus-visible:ring-2"
               >
-                {APPS.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label}
+                {access.departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
                   </option>
                 ))}
               </select>

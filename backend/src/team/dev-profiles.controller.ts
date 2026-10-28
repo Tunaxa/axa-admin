@@ -34,7 +34,7 @@ export class DevProfilesController {
     @Req() request: AuthenticatedRequest,
     @Query() query: ListDevProfilesQuery,
   ): Promise<DevProfileView[]> {
-    return this.profiles.list(request.user.org, query);
+    return this.profiles.list(request.user.org, request.user.sub, query);
   }
 
   @RequirePermissions('team:read')
@@ -43,7 +43,11 @@ export class DevProfilesController {
     @Req() request: AuthenticatedRequest,
     @Param('teamMemberId', ParseUUIDPipe) teamMemberId: string,
   ): Promise<DevProfileView> {
-    return this.profiles.findOne(request.user.org, teamMemberId);
+    return this.profiles.findOne(
+      request.user.org,
+      request.user.sub,
+      teamMemberId,
+    );
   }
 
   /**

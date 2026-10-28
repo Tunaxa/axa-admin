@@ -12,6 +12,6 @@ export class UsersController {
   @RequirePermissions('team:read')
   @Get()
   list(@Req() request: AuthenticatedRequest): Promise<UserSummary[]> {
-    return this.users.list(request.user.org);
+    return this.users.list(request.user.org, request.user.sub);
   }
 }
