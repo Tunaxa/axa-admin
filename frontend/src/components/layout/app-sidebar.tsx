@@ -60,7 +60,18 @@ export function AppSidebar() {
                     {content}
                   </Link>
                 ) : (
-                  <button type="button" className={className}>
+                  // A module with no route yet. Kept visible so the shape of
+                  // the product is legible, but taken out of the tab order:
+                  // a control that accepts focus and then does nothing is a
+                  // dead stop a keyboard user has to pass on every page.
+                  // `aria-disabled` rather than `disabled` so a screen reader
+                  // still reads it, as unavailable rather than absent.
+                  <button
+                    type="button"
+                    aria-disabled="true"
+                    tabIndex={-1}
+                    className={cn(className, 'cursor-default opacity-60')}
+                  >
                     {content}
                   </button>
                 )}

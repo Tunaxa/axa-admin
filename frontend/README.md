@@ -373,6 +373,62 @@ palette render — shared files that other open branches are editing. That is th
 conflict class that broke `dev`, so the one-line link is left for whoever lands
 these chains.
 
+## Keyboard and focus
+
+### One focus ring, everywhere
+
+`lib/focus.ts` exports `FOCUS_RING`, and every interactive element wears it.
+Before this, shadcn's buttons had the design system's ring while the
+hand-written controls — the docs tree, the developer picker, the linked-issue
+checkboxes — fell back to the browser's default outline: thin, theme-blind,
+and almost invisible on a row that is already highlighted. A focus style that
+changes between two buttons tells a keyboard user something happened when
+nothing did.
+
+`focus-visible` rather than `focus`, so a mouse click leaves no ring behind —
+which is the reason people disable focus styles in the first place.
+
+Audited by walking every focusable element on each route: **0 missing** on
+`/`, `/team`, `/team/reports` and `/docs`.
+
+### Skip to content
+
+The first thing in the tab order, hidden until it has focus. Without it a
+keyboard user crosses the navigation and the toolbar before reaching the page,
+on every page, every time.
+
+`<main>` carries `tabIndex={-1}` so the link can actually move focus there:
+without it the browser scrolls to the anchor and leaves focus behind, and the
+next Tab goes back to the top. Verified — activating it lands focus on
+`main#main`, past the sidebar and the top bar.
+
+### Navigation items with no page are out of the tab order
+
+Four of the seven modules have no route yet. They were plain buttons that took
+focus and did nothing — a dead stop on every page. They are now
+`aria-disabled` with `tabIndex={-1}`: still visible, still read by a screen
+reader as unavailable, no longer in the way.
+
+`Docs` gained its `href` at the same time; the route has existed since the
+docs reader landed and the nav item was still a button.
+
+The tab order from the top of a page is now **skip link → Work → Team → Docs →
+search → account → the page**, against nine stops before.
+
+### What this pass did not do
+
+- **The board's drag and drop is still mouse-only.** Moving an issue between
+  columns by keyboard is not possible; the status dropdown in the detail panel
+  is the only keyboard path, and it works, but it is not the same affordance.
+- **No arrow-key navigation in the docs tree.** Every node is a tab stop,
+  which is correct but verbose on a large tree — a `treeview` pattern with
+  roving focus is the proper answer.
+- **No screen reader pass.** This was a keyboard and focus audit; headings,
+  landmarks and live regions have not been checked with a reader.
+- **No contrast audit.** Colours are untouched here.
+- **No automated accessibility tests.** The audit was a script run by hand
+  against a live page; `axe-core` in CI would keep it from regressing.
+
 ## Adding shadcn/ui components
 
 ```bash
