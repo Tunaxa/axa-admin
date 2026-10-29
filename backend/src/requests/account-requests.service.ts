@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -10,6 +11,7 @@ import {
   type Prisma,
 } from '@prisma/client';
 
+import { PermissionsService } from '../auth/permissions.service.js';
 import { StripeService } from '../billing/stripe.service.js';
 import { TeamsService } from '../integrations/teams.service.js';
 import { EventsService } from '../events/events.service.js';
@@ -30,6 +32,7 @@ export class AccountRequestsService {
     private readonly teams: TeamsService,
     private readonly mail: MailService,
     private readonly events: EventsService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   create(
@@ -97,7 +100,7 @@ export class AccountRequestsService {
     id: string,
     dto: ApproveRequestDto,
   ): Promise<AccountRequest> {
-    const request = await this.assertOpen(organizationId, id);
+    const request = await this.assertOpen(organizationId, id, deciderId);
 
     const session = await this.stripe.createCheckoutSession(
       organizationId,
@@ -175,7 +178,7 @@ export class AccountRequestsService {
     status: AccountRequestStatus,
     dto: DecideRequestDto,
   ): Promise<AccountRequest> {
-    const request = await this.assertOpen(organizationId, id);
+    const request = await this.assertOpen(organizationId, id, deciderId);
 
     const decided = await this.prisma.accountRequest.update({
       where: { id: request.id },
@@ -202,8 +205,27 @@ export class AccountRequestsService {
   private async assertOpen(
     organizationId: string,
     id: string,
+    deciderId?: string,
   ): Promise<AccountRequest> {
     const request = await this.findOne(organizationId, id);
+
+    // The guard checked that this person may decide *something*. Whether they
+    // may decide this one depends on the application it is for, which only
+    // the record knows — so the per-application rule is enforced here.
+    if (deciderId) {
+      const allowed = await this.permissions.can(
+        organizationId,
+        deciderId,
+        'requests:decide',
+        request.app,
+      );
+
+      if (!allowed) {
+        throw new ForbiddenException(
+          `You cannot decide ${request.app} requests`,
+        );
+      }
+    }
 
     if (
       request.status === AccountRequestStatus.approved ||

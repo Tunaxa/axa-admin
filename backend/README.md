@@ -1294,6 +1294,61 @@ Deleting is kept away from the roles that do the day's work: an issue or a page
 removed by accident takes what it said with it, so deletion sits with the
 people accountable for the record.
 
+### Role × application
+
+`TeamMember.role` applies everywhere. An `AppOwnership` row **replaces** it for
+that application — replaces, not adds, which is what the schema means by
+"applies wherever no per-application ownership overrides it".
+
+| Someone | Asked about | Answer |
+| --- | --- | --- |
+| `developer`, owns `axacrm` as `dev_team_leader` | `axacrm` | **dev_team_leader** |
+| the same person | `axapass` | developer |
+| the same person | no application | developer |
+| `dev_team_leader`, owns `axapass` as `viewer` | `axapass` | **viewer** |
+| the same person | `axacrm` | dev_team_leader |
+
+Both directions, verified. Ownership can raise somebody on one application and
+lower them on another, and neither leaks into the rest.
+
+Treating ownership as *extra* permissions — the obvious shortcut — would mean
+holding any application at a senior role quietly raised somebody everywhere.
+That is privilege escalation wearing a feature's clothes.
+
+### A gate, and then a check
+
+A global guard runs **before** the handler, so it cannot know which
+application a request concerns when that comes from the record being acted on.
+Two questions, in two places:
+
+| Where | Question | Answer from |
+| --- | --- | --- |
+| `PermissionsGuard` | *Could you do this anywhere?* | the organization role **union** every ownership |
+| The handler | *May you do this here?* | the role that applies to **this record's** application |
+
+The union is a gate and never decides anything on its own. Refusing at the
+guard on the organization role alone would mean somebody who may decide
+`axacrm` requests could never reach the code that would let them.
+
+The cost is real: **a route that uses the gate without the precise check
+behind it is a hole.** Today `requests:decide` is the only app-scoped
+permission, and the check sits in `AccountRequestsService.assertOpen`.
+
+### Asking what you may do
+
+```
+GET /auth/permissions
+GET /auth/permissions?app=axacrm
+```
+
+Authenticated only, for the same reason as `/auth/me`: it answers about the
+caller and nobody else, and a frontend needs it before it can decide which
+buttons to draw. The answer says whether an application ownership decided it:
+
+```json
+{ "role": "dev_team_leader", "scopedToApp": true, "permissions": ["…"] }
+```
+
 ### It denies by default
 
 The guard is global, and **a route that declares nothing is refused** — for an
@@ -1334,13 +1389,10 @@ Two consequences, both deliberate and both worth knowing:
 
 ### What this does not do
 
-- **The per-application layer is not enforced.** `AppOwnership` grants a role
-  per application, and the guard ignores it: only `TeamMember.role` decides.
-  Enforcing it needs each route to say which application it concerns, which for
-  `PATCH /issues/:id` means loading the issue before the guard can decide.
-  Treating ownerships as extra permissions in the meantime would have been
-  worse than ignoring them — owning one application would quietly raise your
-  role everywhere.
+- **Only `requests:decide` is app-scoped so far.** `AppOwnership` now decides
+  who may decide a request, because the request names its application. Issues
+  also carry an `app`, and `work:write` could be scoped the same way — that is
+  a handful of call sites and nobody has asked for it.
 - **No ownership of records.** A developer may edit any issue, not only their
   own, and anyone with `reports:read` reads everybody's daily report. The
   specification wants reports visible to the appropriate team leader; that is a
