@@ -1349,6 +1349,74 @@ Two consequences, both deliberate and both worth knowing:
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
 
+## KPI dashboard
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/company/kpis?from=&to=` | The provisioning pipeline, computed |
+
+Nothing here is entered by hand and nothing is stored. Every number is derived
+from the requests themselves, which means **correcting a request corrects the
+numbers** — verified: changing a rejection to an approval moves the approval
+rate on the next read, with no job to re-run and no snapshot left disagreeing
+with the records it came from.
+
+### What it reports
+
+| Group | Contents |
+| --- | --- |
+| `requests` | Raised in the window, how many are still open, counts by status and by application |
+| `decisions` | Decided in the window, approved / rejected / sent back, the approval rate, and how long decisions took |
+| `payments` | Checkout links issued — and `paid`, which is **unavailable** |
+
+### `paid` is null, and says why
+
+```json
+"paid": {
+  "value": null,
+  "unavailable": "nothing confirms payment yet: Stripe reports a completed checkout over a webhook, and that endpoint does not exist"
+}
+```
+
+A dashboard showing **0 payments** is a lie; one showing "not measured" is
+true. The third stage of the pipeline cannot be computed until something
+receives Stripe's `checkout.session.completed`, and reporting a zero would
+quietly turn a missing integration into a business problem somebody would
+chase.
+
+### Decisions are counted by when they were made
+
+Not by when the request was raised. "How many did we decide last week" and "of
+last week's requests, how many are decided" are different questions, and a
+dashboard that silently answers the second is misleading.
+
+### A median and a p90, not a mean
+
+One request that sat over a holiday drags an average somewhere nobody
+experienced. Computed with `percentile_cont` in SQL, since percentiles are not
+something Prisma expresses; the tenant and the window are bound as parameters
+rather than interpolated.
+
+Checked against known values: decisions taking 1, 3, 9 and 40 hours report a
+median of **6** and a p90 of **30.7**.
+
+### An empty pipeline reports null, not zero
+
+`approvalRate` is null when nothing was settled — "we approved none of
+nothing" is not a 0% approval rate. Requests sent back for more information
+are kept out of the rate entirely: that is not a verdict.
+
+### What this does not do
+
+- **No trend, no comparison to a previous period, and no series** — one window,
+  one set of numbers. A chart needs buckets, which is a different query.
+- **No caching.** Every call recomputes. At this volume that is right, and it
+  is the first thing to measure if it stops being.
+- **Nothing from the Work module.** Issues closed, cycle time and report
+  coverage are all computable and none of them are the pipeline this task
+  names.
+- **No frontend.** The dashboard is an endpoint.
+
 ## Account requests
 
 The provisioning pipeline: somebody asks for an account on an AXA application,
