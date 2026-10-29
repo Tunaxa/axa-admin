@@ -6,6 +6,7 @@ import {
 } from '../auth/jwt-auth.guard.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import { type CheckoutSession, StripeService } from './stripe.service.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 
 /**
  * Billing.
