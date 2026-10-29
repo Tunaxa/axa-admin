@@ -1349,6 +1349,56 @@ Two consequences, both deliberate and both worth knowing:
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
 
+## Decision emails
+
+When a request is decided the requester is emailed. Three templates:
+
+| Outcome | Subject |
+| --- | --- |
+| `approved` | *Your {app} request was approved* — with a button to the checkout |
+| `rejected` | *Your {app} request was declined* — with the reason |
+| `needs_more_info` | *More detail needed for your {app} request* — with what is needed |
+
+Teams hears that a decision happened; the requester is the one who has to act
+on it, so they get the email.
+
+### Both parts, every time
+
+Each message carries a plain-text body as well as HTML. Some people read mail
+as text, some clients refuse HTML, and a message with no text part is treated
+as likelier to be spam.
+
+### The note is escaped
+
+It is written by one person and read by another in a mail client, which makes
+it exactly the kind of text that must not carry markup. An approver who types
+`<b>` sees `<b>`; one who pastes `<img src=x onerror=…>` achieves nothing.
+Verified: the text part shows the tags literally, the HTML part shows
+`&lt;b&gt;`.
+
+### A mail server that is down cannot undo a decision
+
+Sending is fire-and-forget and swallows its own failures into the log — the
+same shape as the Teams notifications, and for the same reason: the decision
+is already recorded by the time the email is attempted. Measured: with nothing
+listening on the SMTP port, rejecting a request still answered **200 in
+116 ms**, the status was stored, and the failure appeared as a warning.
+
+**Without `SMTP_HOST` the emails are off, not broken.** Development and CI
+have no mail server.
+
+### What this does not do
+
+- **No retry and no queue.** A failed email is logged and gone.
+- **No `Reply-To`.** The requester cannot answer the message, which is the
+  obvious next thing: a rejection asking them to follow up gives them nowhere
+  to follow up to.
+- **No localisation.** English only, and the application name goes in raw.
+- **No templating engine and no branding** — inline styles, no logo, nothing
+  shared with the frontend's look.
+- **Nothing is recorded about the email.** Whether a requester was told is not
+  in the database, only in the log.
+
 ## KPI dashboard
 
 | Method | Path | Purpose |

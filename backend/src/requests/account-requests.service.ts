@@ -12,6 +12,7 @@ import {
 
 import { StripeService } from '../billing/stripe.service.js';
 import { TeamsService } from '../integrations/teams.service.js';
+import { MailService, type RequestOutcome } from '../mail/mail.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ApproveRequestDto } from './dto/approve-request.dto.js';
 import type { CreateRequestDto } from './dto/create-request.dto.js';
@@ -26,6 +27,7 @@ export class AccountRequestsService {
     private readonly prisma: PrismaService,
     private readonly stripe: StripeService,
     private readonly teams: TeamsService,
+    private readonly mail: MailService,
   ) {}
 
   create(
@@ -225,6 +227,19 @@ export class AccountRequestsService {
       status,
       note: request.decisionNote,
     });
+
+    // The person who asked is told as well as the channel. Teams hears that a
+    // decision happened; the requester is the one who has to act on it.
+    this.mail.notifyRequester(
+      status as RequestOutcome,
+      request.requesterEmail,
+      {
+        requesterName: request.requesterName,
+        app: request.app,
+        note: request.decisionNote,
+        checkoutUrl: request.checkoutUrl,
+      },
+    );
 
     this.logger.log(
       `Request ${request.id} (${request.app}) ${status} for ${request.requesterEmail}`,
