@@ -6,6 +6,7 @@ import {
 } from '../auth/jwt-auth.guard.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import { type CheckoutSession, StripeService } from './stripe.service.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 
 /**
  * Billing.
@@ -27,6 +28,7 @@ export class BillingController {
    * route takes a `referenceId` for whatever is being approved and is ready
    * for it.
    */
+  @RequirePermissions('billing:manage')
   @Post('checkout-sessions')
   create(
     @Req() request: AuthenticatedRequest,
