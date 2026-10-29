@@ -4,6 +4,8 @@ import * as React from 'react';
 import { cn } from 'cn';
 import { ChevronRight } from 'lucide-react';
 
+import { FOCUS_RING } from '@/lib/focus';
+
 import type { PageSummary } from './types';
 
 /** Children of each page, keyed by parent id; the root is keyed by `''`. */
@@ -120,7 +122,10 @@ function TreeNode({
             onClick={() => onToggle(page.id)}
             aria-label={open ? `Collapse ${page.title}` : `Expand ${page.title}`}
             aria-expanded={open}
-            className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1"
+            className={cn(
+              'text-muted-foreground hover:text-foreground shrink-0 rounded p-1',
+              FOCUS_RING,
+            )}
           >
             <ChevronRight
               className={cn('size-3.5 transition-transform', open && 'rotate-90')}
@@ -136,8 +141,9 @@ function TreeNode({
           onClick={() => onSelect(page.id)}
           aria-current={isSelected ? 'page' : undefined}
           className={cn(
-            'min-w-0 flex-1 truncate py-1.5 pr-2 text-left text-sm',
+            'min-w-0 flex-1 truncate rounded py-1.5 pr-2 text-left text-sm',
             isSelected && 'font-medium',
+            FOCUS_RING,
           )}
         >
           {page.title}

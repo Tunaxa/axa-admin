@@ -12,6 +12,8 @@ import { CalendarModule } from './calendar/calendar.module.js';
 import { CompanyModule } from './company/company.module.js';
 import { DocsModule } from './docs/docs.module.js';
 import { GithubModule } from './github/github.module.js';
+import { EventsModule } from './events/events.module.js';
+import { MailModule } from './mail/mail.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RequestsModule } from './requests/requests.module.js';
 import { TeamModule } from './team/team.module.js';
@@ -36,6 +38,8 @@ import { WorkModule } from './work/work.module.js';
       },
     }),
     PrismaModule,
+    MailModule,
+    EventsModule,
     AuthModule,
     BillingModule,
     WorkModule,
