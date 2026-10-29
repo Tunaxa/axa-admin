@@ -7,6 +7,7 @@ The AXA Admin API — a NestJS application.
 - NestJS 12 + TypeScript, running as native ESM
 - Prisma 7 over PostgreSQL 16
 - Mongoose over MongoDB 8 for the docs module's pages
+- Redis 8 for event fan-out between instances
 - JWT authentication via `@nestjs/jwt`, bcrypt password hashing
 - Vitest for unit and end-to-end tests
 - oxlint for linting, Prettier for formatting
@@ -1348,6 +1349,65 @@ Two consequences, both deliberate and both worth knowing:
 - **Feature modules still import `AuthModule`** although they no longer use
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
+
+## Event fan-out
+
+`EventsService` publishes what happened so other instances — and eventually a
+browser — can hear about it.
+
+```ts
+events.publish('request.decided', organizationId, { requestId, app, status, … });
+const stop = await events.subscribe('request.decided', organizationId, handler);
+```
+
+### Two connections, not one
+
+A Redis connection in subscriber mode accepts almost no other command, so
+publishing down the same socket fails. This is the classic way to get Pub/Sub
+wrong, and it fails only once something actually subscribes — which is late.
+
+### This is fan-out, not a queue
+
+Redis Pub/Sub delivers to whoever is listening **at the moment of
+publication** and to nobody else. Nothing is retained, retried or
+acknowledged, and a subscriber that is restarting misses whatever is sent
+meanwhile.
+
+Demonstrated rather than asserted: publishing with no subscriber and then
+subscribing receives **nothing**. That is Redis working as designed.
+
+It is the right shape for telling other instances what just happened. It is
+the **wrong** shape for work that has to happen — email retries, webhook
+deliveries, anything with an outcome somebody depends on. Those need a queue
+with acknowledgement, which this is not.
+
+### Channels are per tenant
+
+`axa-admin:<organizationId>:<event>`. Namespaced so this Redis can be shared
+with another service, and per tenant so a subscriber that cares about one
+organization does not receive and discard everybody else's.
+
+### A handler that throws does not silence the others
+
+Each is called in its own try/catch, and unsubscribing one listener leaves the
+rest on the channel — only the last one out leaves it.
+
+### Without `REDIS_URL` it is off, not broken
+
+Publishing is a no-op and subscribing returns a no-op unsubscribe. Development
+and CI do not need a Redis to run the API, and a wrong URL gives up after five
+retries rather than reconnecting for ever behind an invisible backoff.
+
+### What this does not do
+
+- **Nothing subscribes yet.** One publisher — a decided request — and no
+  listeners. The WebSocket gateway that would relay these to a browser is a
+  separate task.
+- **No persistence, no replay, no dead letter.** See above: not a queue.
+- **No authentication on the Redis**, which is fine for a container on a
+  private network and not fine on a shared one.
+- **No health check.** A Redis that is down shows up as warnings in the log
+  and nowhere else.
 
 ## Decision emails
 

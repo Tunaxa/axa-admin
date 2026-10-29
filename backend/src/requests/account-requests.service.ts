@@ -12,6 +12,7 @@ import {
 
 import { StripeService } from '../billing/stripe.service.js';
 import { TeamsService } from '../integrations/teams.service.js';
+import { EventsService } from '../events/events.service.js';
 import { MailService, type RequestOutcome } from '../mail/mail.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ApproveRequestDto } from './dto/approve-request.dto.js';
@@ -28,6 +29,7 @@ export class AccountRequestsService {
     private readonly stripe: StripeService,
     private readonly teams: TeamsService,
     private readonly mail: MailService,
+    private readonly events: EventsService,
   ) {}
 
   create(
@@ -240,6 +242,17 @@ export class AccountRequestsService {
         checkoutUrl: request.checkoutUrl,
       },
     );
+
+    // Announced to whatever else is running: a dashboard open in a browser,
+    // another API instance, a future WebSocket gateway. Nothing listens yet,
+    // and nothing has to.
+    this.events.publish('request.decided', request.organizationId, {
+      organizationId: request.organizationId,
+      requestId: request.id,
+      app: request.app,
+      status,
+      requesterEmail: request.requesterEmail,
+    });
 
     this.logger.log(
       `Request ${request.id} (${request.app}) ${status} for ${request.requesterEmail}`,
