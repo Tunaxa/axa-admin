@@ -487,6 +487,8 @@ enum AccountRequestStatus {
   needs_more_info
 
   @@map("account_request_status")
+}
+
 /// A reading of how one AXA application is doing over a window of time.
 ///
 /// The metrics are of two kinds and the schema keeps the difference visible:
