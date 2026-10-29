@@ -1,16 +1,18 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
 } from '@nestjs/common';
-import type { AccountRequest } from '@prisma/client';
+import type { AccountRequest, AccountRequestStatus } from '@prisma/client';
 
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
@@ -19,6 +21,7 @@ import { ApproveRequestDto } from './dto/approve-request.dto.js';
 import { CreateRequestDto } from './dto/create-request.dto.js';
 import { DecideRequestDto } from './dto/decide-request.dto.js';
 import { ListRequestsQuery } from './dto/list-requests.query.js';
+import { UpdateRequestDto } from './dto/update-request.dto.js';
 
 /**
  * Account provisioning requests.
@@ -55,6 +58,52 @@ export class AccountRequestsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AccountRequest> {
     return this.requests.findOne(request.user.org, id);
+  }
+
+  /** Where this request can go from where it is. */
+  @RequirePermissions('requests:read')
+  @Get(':id/transitions')
+  transitions(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{
+    status: AccountRequestStatus;
+    allowed: readonly AccountRequestStatus[];
+  }> {
+    return this.requests.transitions(request.user.org, id);
+  }
+
+  /**
+   * Edits a still-open request.
+   *
+   * `requests:write` at the route, and your own request only in the service:
+   * the guard decides per route, and "mine" is a per-record rule.
+   */
+  @RequirePermissions('requests:write')
+  @Patch(':id')
+  update(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRequestDto,
+  ): Promise<AccountRequest> {
+    return this.requests.update(request.user.org, request.user.sub, id, dto);
+  }
+
+  /**
+   * Withdraws a request.
+   *
+   * Answers with the record rather than `204`: it still exists, marked
+   * `withdrawn`, and saying so is more useful than an empty response that
+   * looks like a deletion.
+   */
+  @RequirePermissions('requests:write')
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  withdraw(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AccountRequest> {
+    return this.requests.withdraw(request.user.org, request.user.sub, id);
   }
 
   /** Approves, and answers with the checkout URL to send the customer to. */

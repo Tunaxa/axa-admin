@@ -21,6 +21,8 @@ import type { ApproveRequestDto } from './dto/approve-request.dto.js';
 import type { CreateRequestDto } from './dto/create-request.dto.js';
 import type { DecideRequestDto } from './dto/decide-request.dto.js';
 import type { ListRequestsQuery } from './dto/list-requests.query.js';
+import type { UpdateRequestDto } from './dto/update-request.dto.js';
+import { canTransition, isOpen, TRANSITIONS } from './request-transitions.js';
 
 @Injectable()
 export class AccountRequestsService {
@@ -196,6 +198,94 @@ export class AccountRequestsService {
   }
 
   /**
+   * Edits a request, and re-submits it if it was sent back.
+   *
+   * Only the person who raised it, and only while it is open: once a decision
+   * is final, changing what was asked for would quietly rewrite what somebody
+   * approved.
+   *
+   * Editing a `needs_more_info` request moves it back to `pending`, which is
+   * the whole point of that status — the detail has been supplied, so the
+   * approver has it again. The previous note is kept, so the requester can
+   * still see what was asked of them.
+   */
+  async update(
+    organizationId: string,
+    editorId: string,
+    id: string,
+    dto: UpdateRequestDto,
+  ): Promise<AccountRequest> {
+    const request = await this.findOne(organizationId, id);
+
+    if (!isOpen(request.status)) {
+      throw new ConflictException(
+        `A ${request.status} request cannot be changed`,
+      );
+    }
+
+    if (request.raisedById !== editorId) {
+      throw new ForbiddenException('You can only edit your own requests');
+    }
+
+    const resubmitting =
+      request.status === AccountRequestStatus.needs_more_info;
+
+    return this.prisma.accountRequest.update({
+      where: { id: request.id },
+      data: {
+        ...(dto.requesterEmail ? { requesterEmail: dto.requesterEmail } : {}),
+        ...(dto.requesterName ? { requesterName: dto.requesterName } : {}),
+        ...(dto.note !== undefined ? { note: dto.note } : {}),
+        ...(resubmitting ? { status: AccountRequestStatus.pending } : {}),
+      },
+    });
+  }
+
+  /**
+   * Takes a request back.
+   *
+   * Marked `withdrawn` rather than deleted. A request is part of what the
+   * pipeline did, and a dashboard that counts requests must not have rows
+   * vanish from under it — "we withdrew four" and "four never happened" are
+   * different facts.
+   */
+  async withdraw(
+    organizationId: string,
+    withdrawerId: string,
+    id: string,
+  ): Promise<AccountRequest> {
+    const request = await this.findOne(organizationId, id);
+
+    if (!canTransition(request.status, AccountRequestStatus.withdrawn)) {
+      throw new ConflictException(
+        `A ${request.status} request cannot be withdrawn`,
+      );
+    }
+
+    if (request.raisedById !== withdrawerId) {
+      throw new ForbiddenException('You can only withdraw your own requests');
+    }
+
+    return this.prisma.accountRequest.update({
+      where: { id: request.id },
+      data: { status: AccountRequestStatus.withdrawn },
+    });
+  }
+
+  /** Where this request can go from where it is. */
+  async transitions(
+    organizationId: string,
+    id: string,
+  ): Promise<{
+    status: AccountRequestStatus;
+    allowed: readonly AccountRequestStatus[];
+  }> {
+    const request = await this.findOne(organizationId, id);
+
+    return { status: request.status, allowed: TRANSITIONS[request.status] };
+  }
+
+  /**
    * A request can only be decided while it is open.
    *
    * `needs_more_info` counts as open: the whole point is that it comes back.
@@ -227,11 +317,10 @@ export class AccountRequestsService {
       }
     }
 
-    if (
-      request.status === AccountRequestStatus.approved ||
-      request.status === AccountRequestStatus.rejected
-    ) {
-      throw new ConflictException(`This request was already ${request.status}`);
+    // One table decides this, so a status added later cannot be decidable by
+    // accident just because nobody updated a condition here.
+    if (!isOpen(request.status)) {
+      throw new ConflictException(`This request is already ${request.status}`);
     }
 
     return request;

@@ -485,6 +485,9 @@ enum AccountRequestStatus {
   rejected
   /// Sent back for more detail. Still open, but not waiting on the approver.
   needs_more_info
+  /// Taken back by whoever raised it. Final, and kept rather than deleted:
+  /// a withdrawn request is still part of what the pipeline did.
+  withdrawn
 
   @@map("account_request_status")
 }
