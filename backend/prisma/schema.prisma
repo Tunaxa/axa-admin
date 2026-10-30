@@ -48,6 +48,7 @@ model Organization {
   appUsage      AppUsageSnapshot[]
   githubRepositories GithubRepository[]
   githubLinks        GithubLink[]
+  orgChart           OrgChart?
   calendarEvents     CalendarEvent[]
 
   @@map("organizations")
@@ -605,6 +606,21 @@ model GithubLink {
   @@index([organizationId])
   @@index([issueId])
   @@map("github_links")
+}
+
+/// The tenant's organization chart document.
+model OrgChart {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @unique @db.Uuid
+  name           String       @default("Organigramme")
+  data           Json         @default("{\"nodes\":[],\"edges\":[]}")
+  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("org_charts")
 }
 
 /// A point or span on the shared calendar.

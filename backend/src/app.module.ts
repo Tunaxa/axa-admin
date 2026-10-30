@@ -12,6 +12,7 @@ import { CalendarModule } from './calendar/calendar.module.js';
 import { CompanyModule } from './company/company.module.js';
 import { DocsModule } from './docs/docs.module.js';
 import { GithubModule } from './github/github.module.js';
+import { OrgChartModule } from './orgchart/orgchart.module.js';
 import { EventsModule } from './events/events.module.js';
 import { MailModule } from './mail/mail.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -48,6 +49,7 @@ import { WorkModule } from './work/work.module.js';
     DocsModule,
     GithubModule,
     RequestsModule,
+    OrgChartModule,
     CalendarModule,
   ],
   controllers: [AppController],
