@@ -50,8 +50,6 @@ model Organization {
   githubLinks        GithubLink[]
   orgChart           OrgChart?
   calendarEvents     CalendarEvent[]
-  orgChart           OrgChart?
-
   @@map("organizations")
 }
 
@@ -656,17 +654,3 @@ model CalendarEvent {
   @@map("calendar_events")
 }
 
-/// The tenant's organization chart document.
-model OrgChart {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @unique @db.Uuid
-  name           String       @default("Organigramme")
-  data           Json         @default("{\"nodes\":[],\"edges\":[]}")
-  updatedAt      DateTime     @updatedAt
-  createdAt      DateTime     @default(now())
-
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@index([organizationId])
-  @@map("org_charts")
-}
