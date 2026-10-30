@@ -30,10 +30,11 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'work', label: 'Work', icon: LayoutDashboard, href: '/' },
   { key: 'roadmap', label: 'Roadmap', icon: Map },
   { key: 'team', label: 'Team', icon: Users, href: '/team' },
+  { key: 'orgchart', label: 'Organigramme', icon: Network, href: '/orgchart' as Route },
   { key: 'calendar', label: 'Calendar', icon: CalendarDays, href: '/calendar' },
   { key: 'orgchart', label: 'Organigramme', icon: Network, href: '/orgchart' as Route },
   { key: 'company', label: 'Company', icon: Building2 },
-  { key: 'docs', label: 'Docs', icon: FileText },
+  { key: 'docs', label: 'Docs', icon: FileText, href: '/docs' },
   { key: 'app-usage', label: 'App Usage', icon: CircleDollarSign },
   { key: 'account-requests', label: 'Account Requests', icon: UserPlus },
 ];
