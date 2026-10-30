@@ -20,6 +20,8 @@ turning incoming account requests into active, billed accounts.
 | Team | Roster, roles, per-app ownership, capacity, daily reports |
 | Company | Company details, KPI dashboard, goals and reviews |
 | Docs | Living documentation, architecture, conventions, developer profiles |
+| Calendar | Company calendar with month/week/day views, Notion shortcuts, and event dialogs |
+| Organigramme | Interactive drag-and-drop organigramme canvas with connectors and SVG export |
 | App Usage | Deploy status, CI health, error rates, signups and MRR |
 | Account Requests | Provisioning gateway across the customer-facing applications |
 | Permissions | Role- and app-scoped access control |
@@ -27,11 +29,9 @@ turning incoming account requests into active, billed accounts.
 
 ## Tech Stack
 
-- **Frontend** — Next.js, React, TypeScript, Tailwind CSS, shadcn/ui
-- **State & data** — TanStack Query, WebSockets
-- **Backend** — NestJS, Prisma
-- **Data** — PostgreSQL (primary), MongoDB (docs pages), Redis (cache and real-time)
-- **Infrastructure** — Docker, GitHub Actions
+- **Frontend** — Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Radix UI
+- **Backend** — NestJS 12 (native ESM), Prisma 7, PostgreSQL 16 (primary), MongoDB 8 with Mongoose 9 (docs pages)
+- **Infrastructure** — Multi-stage hardened Docker, GitHub Actions CI
 
 ## Repository Structure
 
@@ -74,10 +74,10 @@ for that step; generation does not open a connection, so CI starts no database.
 
 ## Status
 
-Early development. The repository structure is in place;
-`frontend/` and `backend/` are prepared directories awaiting their
-framework scaffolds. See the phased build plan in the project
-documentation.
+MVP finalized for internal dogfooding and testing across all core modules.
+For a complete audit of operational capabilities and remaining production launch
+blockers (Stripe webhooks, automated test suite, session security, multi-tenant integrations),
+see [docs/MVP-STATUS.md](docs/MVP-STATUS.md).
 
 ## Container images
 
