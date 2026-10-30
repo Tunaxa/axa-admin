@@ -19,6 +19,9 @@ export const PERMISSIONS = [
   'team:manage',
   'reports:read',
   'reports:write',
+  'calendar:read',
+  'calendar:write',
+  'calendar:delete',
   'requests:read',
   'requests:write',
   'requests:decide',
@@ -35,6 +38,7 @@ const VIEWER: Permission[] = [
   'docs:read',
   'team:read',
   'reports:read',
+  'calendar:read',
   'requests:read',
 ];
 
@@ -44,6 +48,7 @@ const CONTRIBUTOR: Permission[] = [
   'work:write',
   'docs:write',
   'reports:write',
+  'calendar:write',
   // Anyone on the team may ask for an account to be provisioned; deciding on
   // the request is a different matter, and so is paying for it.
   'requests:write',
@@ -64,6 +69,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     ...CONTRIBUTOR,
     'work:delete',
     'docs:delete',
+    'calendar:delete',
     // A team leader decides on requests from their team, but does not hold
     // the company card: approving creates a payment link, it does not pay.
     'requests:decide',

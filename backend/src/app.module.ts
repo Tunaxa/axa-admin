@@ -8,6 +8,7 @@ import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
 import { BillingModule } from './billing/billing.module.js';
+import { CalendarModule } from './calendar/calendar.module.js';
 import { CompanyModule } from './company/company.module.js';
 import { DocsModule } from './docs/docs.module.js';
 import { GithubModule } from './github/github.module.js';
@@ -47,6 +48,7 @@ import { WorkModule } from './work/work.module.js';
     DocsModule,
     GithubModule,
     RequestsModule,
+    CalendarModule,
   ],
   controllers: [AppController],
   providers: [

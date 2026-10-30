@@ -48,6 +48,7 @@ model Organization {
   appUsage      AppUsageSnapshot[]
   githubRepositories GithubRepository[]
   githubLinks        GithubLink[]
+  calendarEvents     CalendarEvent[]
 
   @@map("organizations")
 }
@@ -115,6 +116,7 @@ model User {
   dailyReports   DailyReport[]
   teamMember     TeamMember?
   activity       ActivityEvent[]
+  calendarEvents CalendarEvent[]
   raisedRequests  AccountRequest[] @relation("RaisedRequests")
   decidedRequests AccountRequest[] @relation("DecidedRequests")
 
@@ -603,4 +605,36 @@ model GithubLink {
   @@index([organizationId])
   @@index([issueId])
   @@map("github_links")
+}
+
+/// A point or span on the shared calendar.
+///
+/// All times are stored in UTC; the frontend renders them in the viewer's
+/// local time. `allDay` entries carry a date-aligned `startAt` and `endAt`
+/// (midnight-to-midnight in UTC) so the same query shape returns them.
+model CalendarEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  /// The person who created the event. Kept so an audit can tell who put
+  /// something on the calendar, and so a future "my events" filter is cheap.
+  createdById    String   @db.Uuid
+  title          String
+  description    String?
+  location       String?
+  startAt        DateTime
+  endAt          DateTime
+  allDay         Boolean  @default(false)
+  /// A tag from a short palette, so the frontend decides the shade.
+  color          String   @default("sky")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  // The month and week views ask for every event that overlaps a window; a
+  // tenant-scoped index on `startAt` is what answers that cheaply.
+  @@index([organizationId, startAt])
+  @@index([createdById])
+  @@map("calendar_events")
 }
