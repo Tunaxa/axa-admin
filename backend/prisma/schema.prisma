@@ -50,7 +50,6 @@ model Organization {
   githubLinks        GithubLink[]
   orgChart           OrgChart?
   calendarEvents     CalendarEvent[]
-
   @@map("organizations")
 }
 
@@ -654,3 +653,4 @@ model CalendarEvent {
   @@index([createdById])
   @@map("calendar_events")
 }
+

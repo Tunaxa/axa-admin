@@ -51,6 +51,7 @@ import { WorkModule } from './work/work.module.js';
     RequestsModule,
     OrgChartModule,
     CalendarModule,
+    OrgChartModule,
   ],
   controllers: [AppController],
   providers: [
