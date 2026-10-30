@@ -6,7 +6,7 @@ import {
   MaxLength,
 } from 'class-validator';
 
-import { BLOCK_TYPES, type BlockType } from '../schemas/block.schema.js';
+import { BLOCK_TYPES, type BlockType } from '../block.types.js';
 
 /** One content block, as it arrives on the wire. */
 export class BlockDto {

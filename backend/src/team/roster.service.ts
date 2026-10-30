@@ -5,10 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { AppKey, Role } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateTeamMemberDto } from './dto/create-team-member.dto.js';
+import type { InviteMemberDto } from './dto/invite-member.dto.js';
 import type { UpdateTeamMemberDto } from './dto/update-team-member.dto.js';
+
+const BCRYPT_ROUNDS = 12;
 
 /** A roster row: the membership, who it belongs to, and what they own. */
 export interface RosterEntry {
@@ -72,6 +76,60 @@ export class RosterService {
 
     return this.prisma.teamMember.create({
       data: { organizationId, userId: dto.userId, role: dto.role },
+      select: RosterService.SELECT,
+    });
+  }
+
+  /**
+   * One-shot invite: create a user, add them to the roster and grant the
+   * per-app role in a single transaction. Everything or nothing — a
+   * half-created user is worse than none.
+   */
+  async invite(
+    organizationId: string,
+    dto: InviteMemberDto,
+  ): Promise<RosterEntry> {
+    const existing = await this.prisma.user.findUnique({
+      where: { organizationId_email: { organizationId, email: dto.email } },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'A user with that email already exists in this organization',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+
+    const memberId = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          organizationId,
+          email: dto.email,
+          name: dto.name,
+          passwordHash,
+        },
+        select: { id: true },
+      });
+      const member = await tx.teamMember.create({
+        data: { organizationId, userId: user.id, role: dto.role },
+        select: { id: true },
+      });
+      if (dto.team) {
+        await tx.appOwnership.create({
+          data: {
+            organizationId,
+            teamMemberId: member.id,
+            app: dto.team,
+            role: dto.role,
+          },
+        });
+      }
+      return member.id;
+    });
+
+    return this.prisma.teamMember.findUniqueOrThrow({
+      where: { id: memberId },
       select: RosterService.SELECT,
     });
   }

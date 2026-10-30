@@ -49,6 +49,7 @@ model Organization {
   githubRepositories GithubRepository[]
   githubLinks        GithubLink[]
   orgChart           OrgChart?
+  docsPages          DocsPage[]
   calendarEvents     CalendarEvent[]
   @@map("organizations")
 }
@@ -119,6 +120,8 @@ model User {
   calendarEvents CalendarEvent[]
   raisedRequests  AccountRequest[] @relation("RaisedRequests")
   decidedRequests AccountRequest[] @relation("DecidedRequests")
+  authoredDocs    DocsPage[]       @relation("DocsPageAuthor")
+  editedDocs      DocsPage[]       @relation("DocsPageEditor")
 
   // Unique per tenant rather than globally, so the same address can exist in
   // two organizations once multi-tenancy is switched on.
@@ -135,6 +138,9 @@ model Project {
   name           String
   description    String?
   status         ProjectStatus @default(backlog)
+  /// Completion in integer percent, 0..100. Set by an admin on the project;
+  /// derived progress (`done / total` issues) stays in `KpisService`.
+  completionPercent Int        @default(0)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -654,3 +660,44 @@ model CalendarEvent {
   @@map("calendar_events")
 }
 
+
+/// A documentation page.
+///
+/// Blocks are kept as a JSON column; a page is read, edited and permissioned
+/// as a whole, so a separate blocks table would mean a join for every read and
+/// no gain for how the editor uses them.
+///
+/// `ancestors` holds the path from the root down (own id excluded). Stored
+/// alongside `parentId` so a subtree query — expanding a branch, moving it or
+/// deleting it — is one indexed read; `parentId` alone would need one query
+/// per level.
+model DocsPage {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  title          String
+  /// URL segment. Unique per tenant so `/docs/<slug>` resolves anywhere.
+  slug           String
+  parentId       String?  @db.Uuid
+  /// Ordered root-first; the breadcrumb and the subtree filter at once.
+  ancestors      String[] @db.Uuid
+  order          Int      @default(0)
+  /// The page content as `BlockDto[]`.
+  blocks         Json     @default("[]")
+  authorId       String   @db.Uuid
+  lastEditedById String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       DocsPage?    @relation("DocsPageTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     DocsPage[]   @relation("DocsPageTree")
+  author       User         @relation("DocsPageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  lastEditedBy User?        @relation("DocsPageEditor", fields: [lastEditedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, parentId, order])
+  @@index([ancestors(ops: ArrayOps)], type: Gin)
+  @@index([authorId])
+  @@index([lastEditedById])
+  @@map("docs_pages")
+}

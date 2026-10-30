@@ -15,6 +15,7 @@ import {
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { CreateTeamMemberDto } from './dto/create-team-member.dto.js';
+import { InviteMemberDto } from './dto/invite-member.dto.js';
 import { UpdateTeamMemberDto } from './dto/update-team-member.dto.js';
 import { type RosterEntry, RosterService } from './roster.service.js';
 
@@ -39,6 +40,20 @@ export class RosterController {
     @Body() dto: CreateTeamMemberDto,
   ): Promise<RosterEntry> {
     return this.roster.add(request.user.org, dto);
+  }
+
+  /**
+   * One-shot: create the user, roster row and app ownership together.
+   * Preferred over `POST /team-members` whenever the account does not exist
+   * yet, which is the common CEO / admin add-a-teammate flow.
+   */
+  @RequirePermissions('team:manage')
+  @Post('invite')
+  invite(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: InviteMemberDto,
+  ): Promise<RosterEntry> {
+    return this.roster.invite(request.user.org, dto);
   }
 
   @RequirePermissions('team:manage')

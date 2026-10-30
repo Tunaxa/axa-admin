@@ -4,18 +4,18 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Req,
 } from '@nestjs/common';
+import type { DocsPage } from '@prisma/client';
 
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { CreatePageDto } from './dto/create-page.dto.js';
 import { UpdatePageDto } from './dto/update-page.dto.js';
-import { PagesService } from './pages.service.js';
-import type { PageDocument } from './schemas/page.schema.js';
-import { ParseObjectIdPipe } from './parse-object-id.pipe.js';
+import { PagesService, type PageSummary } from './pages.service.js';
 
 /**
  * The tenant comes from the verified token (`org`), never from the request, so
@@ -30,14 +30,14 @@ export class PagesController {
   create(
     @Req() request: AuthenticatedRequest,
     @Body() dto: CreatePageDto,
-  ): Promise<PageDocument> {
+  ): Promise<DocsPage> {
     return this.pages.create(request.user.org, request.user.sub, dto);
   }
 
   /** The tree, without page content. */
   @RequirePermissions('docs:read')
   @Get()
-  list(@Req() request: AuthenticatedRequest): Promise<PageDocument[]> {
+  list(@Req() request: AuthenticatedRequest): Promise<PageSummary[]> {
     return this.pages.list(request.user.org);
   }
 
@@ -46,8 +46,8 @@ export class PagesController {
   @Get(':id')
   findOne(
     @Req() request: AuthenticatedRequest,
-    @Param('id', ParseObjectIdPipe) id: string,
-  ): Promise<PageDocument> {
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<DocsPage> {
     return this.pages.findOne(request.user.org, id);
   }
 
@@ -55,9 +55,9 @@ export class PagesController {
   @Patch(':id')
   update(
     @Req() request: AuthenticatedRequest,
-    @Param('id', ParseObjectIdPipe) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePageDto,
-  ): Promise<PageDocument> {
+  ): Promise<DocsPage> {
     return this.pages.update(request.user.org, request.user.sub, id, dto);
   }
 
@@ -72,7 +72,7 @@ export class PagesController {
   @Delete(':id')
   remove(
     @Req() request: AuthenticatedRequest,
-    @Param('id', ParseObjectIdPipe) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<{ deleted: number }> {
     return this.pages.remove(request.user.org, id);
   }

@@ -85,6 +85,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     // A team leader decides on requests from their team, but does not hold
     // the company card: approving creates a payment link, it does not pay.
     'requests:decide',
+    // Department-level manager: adds members to their own team, changes
+    // their role within it. The guard answers "could you do this anywhere";
+    // scoping to the leader's own app is a per-record rule the service
+    // layer would enforce when that becomes a concern.
+    'team:manage',
   ],
   [Role.developer]: CONTRIBUTOR,
   [Role.designer]: CONTRIBUTOR,

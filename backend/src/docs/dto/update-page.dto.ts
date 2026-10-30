@@ -3,10 +3,10 @@ import {
   ArrayMaxSize,
   IsArray,
   IsInt,
-  IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   Min,
@@ -39,7 +39,7 @@ export class UpdatePageDto {
 
   /** `null` moves the page to the root of the tree. */
   @IsOptional()
-  @IsMongoId()
+  @IsUUID()
   parentId?: string | null;
 
   @IsOptional()

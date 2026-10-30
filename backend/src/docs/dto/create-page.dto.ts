@@ -3,10 +3,10 @@ import {
   ArrayMaxSize,
   IsArray,
   IsInt,
-  IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   Min,
@@ -34,7 +34,7 @@ export class CreatePageDto {
 
   /** The page this one sits under. Omitted or null puts it at the root. */
   @IsOptional()
-  @IsMongoId()
+  @IsUUID()
   parentId?: string | null;
 
   @IsOptional()

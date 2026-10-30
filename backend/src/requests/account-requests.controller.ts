@@ -16,11 +16,15 @@ import type { AccountRequest, AccountRequestStatus } from '@prisma/client';
 
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
-import { AccountRequestsService } from './account-requests.service.js';
+import {
+  AccountRequestsService,
+  type ProvisionedAccount,
+} from './account-requests.service.js';
 import { ApproveRequestDto } from './dto/approve-request.dto.js';
 import { CreateRequestDto } from './dto/create-request.dto.js';
 import { DecideRequestDto } from './dto/decide-request.dto.js';
 import { ListRequestsQuery } from './dto/list-requests.query.js';
+import { ProvisionRequestDto } from './dto/provision-request.dto.js';
 import { UpdateRequestDto } from './dto/update-request.dto.js';
 
 /**
@@ -104,6 +108,21 @@ export class AccountRequestsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AccountRequest> {
     return this.requests.withdraw(request.user.org, request.user.sub, id);
+  }
+
+  /**
+   * Approves a request by provisioning an internal user account for the
+   * requester — the admin picks the password, role and team (= AXA app).
+   */
+  @RequirePermissions('requests:decide')
+  @Post(':id/provision')
+  @HttpCode(HttpStatus.OK)
+  provision(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ProvisionRequestDto,
+  ): Promise<ProvisionedAccount> {
+    return this.requests.provision(request.user.org, request.user.sub, id, dto);
   }
 
   /** Approves, and answers with the checkout URL to send the customer to. */
