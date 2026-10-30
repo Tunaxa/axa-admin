@@ -46,8 +46,13 @@ function toMarkdown(block: Block): string | null {
       return `## ${text}`;
     case 'heading_3':
       return `### ${text}`;
-    case 'bulleted_list_item':
+    case 'bulleted_list_item': {
+      if (block.props?.todo) {
+        const checked = Boolean(block.props?.checked);
+        return `- [${checked ? 'x' : ' '}] ${indent(text, '  ')}`;
+      }
       return `- ${indent(text, '  ')}`;
+    }
     case 'numbered_list_item':
       // Always `1.` — Markdown numbers the rendered list itself, so inserting
       // an item in the middle cannot leave the rest counting wrong.

@@ -39,7 +39,7 @@ turning incoming account requests into active, billed accounts.
 axa-admin/
 ├── frontend/            # Next.js application
 ├── backend/             # NestJS application
-├── docker-compose.yml   # Local PostgreSQL and MongoDB
+├── docker-compose.yml   # Local PostgreSQL, MongoDB and Redis
 └── .github/workflows/   # CI
 ```
 

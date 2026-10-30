@@ -39,6 +39,23 @@ services:
       timeout: 5s
       retries: 5
 
+  # Pub/Sub for in-process fan-out: one API instance tells the others what
+  # happened. Published on 6380 rather than 6379, for the same reason
+  # PostgreSQL is on 5433 — not colliding with an instance someone already
+  # runs.
+  redis:
+    image: redis:8-alpine
+    container_name: axa-admin-redis
+    restart: unless-stopped
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    ports:
+      - '${REDIS_PORT:-6380}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres-data:
   mongo-data:

@@ -23,6 +23,15 @@ export interface Block {
   props: Record<string, unknown>;
 }
 
+export type EditorBlockType = BlockType | 'todo';
+
+export interface EditorBlock {
+  id: string;
+  type: EditorBlockType;
+  text: string;
+  props: Record<string, unknown>;
+}
+
 /** A node of the tree, as `GET /docs/pages` returns it — without content. */
 export interface PageSummary {
   id: string;
@@ -37,4 +46,28 @@ export interface PageSummary {
 export interface Page extends PageSummary {
   blocks: Block[];
   updatedAt: string;
+}
+
+export interface CreatePageInput {
+  title: string;
+  slug: string;
+  parentId?: string | null;
+  order?: number;
+  blocks?: Array<{
+    type: BlockType;
+    text?: string;
+    props?: Record<string, unknown>;
+  }>;
+}
+
+export interface UpdatePageInput {
+  title?: string;
+  slug?: string;
+  parentId?: string | null;
+  order?: number;
+  blocks?: Array<{
+    type: BlockType;
+    text?: string;
+    props?: Record<string, unknown>;
+  }>;
 }
