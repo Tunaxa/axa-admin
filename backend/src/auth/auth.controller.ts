@@ -46,6 +46,7 @@ export class AuthController {
     if (!org) throw new NotFoundException('Organization not found');
     return { id: org.id, slug: org.slug, name: org.name };
   }
+  ) {}
 
   @Public()
   @Post('register')

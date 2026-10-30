@@ -5,6 +5,7 @@ import { cn } from 'cn';
 
 import { Badge } from '@/components/ui/badge';
 import { useIssuesContext } from '@/components/work/issues-provider';
+import { FOCUS_RING } from '@/lib/focus';
 
 import { fetchMe, fetchReportsByAuthor, todayIso } from './daily-reports-api';
 import type { DailyReport } from './types';
@@ -69,6 +70,7 @@ export function DailyReportTimeline() {
                   className={cn(
                     'hover:bg-muted w-full truncate rounded-md px-2 py-1.5 text-left text-sm',
                     member.id === selected && 'bg-muted font-medium',
+                    FOCUS_RING,
                   )}
                 >
                   {member.name}

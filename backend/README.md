@@ -7,6 +7,7 @@ The AXA Admin API — a NestJS application.
 - NestJS 12 + TypeScript, running as native ESM
 - Prisma 7 over PostgreSQL 16
 - Mongoose over MongoDB 8 for the docs module's pages
+- Redis 8 for event fan-out between instances
 - JWT authentication via `@nestjs/jwt`, bcrypt password hashing
 - Vitest for unit and end-to-end tests
 - oxlint for linting, Prettier for formatting
@@ -108,6 +109,7 @@ And two carry daily reports:
 | --- | --- | --- |
 | `DailyReport` | `daily_reports` | One developer's update for one working day |
 | `DailyReportIssue` | `daily_report_issues` | The issues a report refers to |
+| `AccountRequest` | `account_requests` | Somebody asking for an account to be provisioned |
 | `DevProfile` | `dev_profiles` | What one member works in, owns, and can be reached on |
 
 And one carries application metrics:
@@ -214,9 +216,11 @@ job title — are not here either; they are their own layer and their own task.
 | `20261008200522_add_app_usage_snapshots` | Creates `app_usage_snapshots` |
 | `20260923013744_add_team_member_and_app_ownership` | Creates `team_members`, `app_ownerships` and the `role` enum |
 | `20260922181030_add_activity_events` | Creates `activity_events` and its enum |
+| `20261009234405_add_account_requests` | Creates `account_requests` and its status enum |
 | `20261009221017_add_dev_profiles` | Creates `dev_profiles`, with a GIN index on `stack` |
 | `20261009231500_add_issue_key` | Adds `issues.key` with a backfill, and the tenant's prefix and counter |
 | `20261009231630_add_github_links` | Creates `github_repositories` and `github_links` |
+| `20261019184240_add_withdrawn_status` | Adds `withdrawn` to the request status enum |
 
 ## Docs content schema
 
@@ -1291,6 +1295,61 @@ Deleting is kept away from the roles that do the day's work: an issue or a page
 removed by accident takes what it said with it, so deletion sits with the
 people accountable for the record.
 
+### Role × application
+
+`TeamMember.role` applies everywhere. An `AppOwnership` row **replaces** it for
+that application — replaces, not adds, which is what the schema means by
+"applies wherever no per-application ownership overrides it".
+
+| Someone | Asked about | Answer |
+| --- | --- | --- |
+| `developer`, owns `axacrm` as `dev_team_leader` | `axacrm` | **dev_team_leader** |
+| the same person | `axapass` | developer |
+| the same person | no application | developer |
+| `dev_team_leader`, owns `axapass` as `viewer` | `axapass` | **viewer** |
+| the same person | `axacrm` | dev_team_leader |
+
+Both directions, verified. Ownership can raise somebody on one application and
+lower them on another, and neither leaks into the rest.
+
+Treating ownership as *extra* permissions — the obvious shortcut — would mean
+holding any application at a senior role quietly raised somebody everywhere.
+That is privilege escalation wearing a feature's clothes.
+
+### A gate, and then a check
+
+A global guard runs **before** the handler, so it cannot know which
+application a request concerns when that comes from the record being acted on.
+Two questions, in two places:
+
+| Where | Question | Answer from |
+| --- | --- | --- |
+| `PermissionsGuard` | *Could you do this anywhere?* | the organization role **union** every ownership |
+| The handler | *May you do this here?* | the role that applies to **this record's** application |
+
+The union is a gate and never decides anything on its own. Refusing at the
+guard on the organization role alone would mean somebody who may decide
+`axacrm` requests could never reach the code that would let them.
+
+The cost is real: **a route that uses the gate without the precise check
+behind it is a hole.** Today `requests:decide` is the only app-scoped
+permission, and the check sits in `AccountRequestsService.assertOpen`.
+
+### Asking what you may do
+
+```
+GET /auth/permissions
+GET /auth/permissions?app=axacrm
+```
+
+Authenticated only, for the same reason as `/auth/me`: it answers about the
+caller and nobody else, and a frontend needs it before it can decide which
+buttons to draw. The answer says whether an application ownership decided it:
+
+```json
+{ "role": "dev_team_leader", "scopedToApp": true, "permissions": ["…"] }
+```
+
 ### It denies by default
 
 The guard is global, and **a route that declares nothing is refused** — for an
@@ -1331,13 +1390,10 @@ Two consequences, both deliberate and both worth knowing:
 
 ### What this does not do
 
-- **The per-application layer is not enforced.** `AppOwnership` grants a role
-  per application, and the guard ignores it: only `TeamMember.role` decides.
-  Enforcing it needs each route to say which application it concerns, which for
-  `PATCH /issues/:id` means loading the issue before the guard can decide.
-  Treating ownerships as extra permissions in the meantime would have been
-  worse than ignoring them — owning one application would quietly raise your
-  role everywhere.
+- **Only `requests:decide` is app-scoped so far.** `AppOwnership` now decides
+  who may decide a request, because the request names its application. Issues
+  also carry an `app`, and `work:write` could be scoped the same way — that is
+  a handful of call sites and nobody has asked for it.
 - **No ownership of records.** A developer may edit any issue, not only their
   own, and anyone with `reports:read` reads everybody's daily report. The
   specification wants reports visible to the appropriate team leader; that is a
@@ -1347,6 +1403,375 @@ Two consequences, both deliberate and both worth knowing:
   `JwtAuthGuard` directly. Removing those imports touches five module files
   that open pull requests are also editing, for no change in behaviour.
 
+## Event fan-out
+
+`EventsService` publishes what happened so other instances — and eventually a
+browser — can hear about it.
+
+```ts
+events.publish('request.decided', organizationId, { requestId, app, status, … });
+const stop = await events.subscribe('request.decided', organizationId, handler);
+```
+
+### Two connections, not one
+
+A Redis connection in subscriber mode accepts almost no other command, so
+publishing down the same socket fails. This is the classic way to get Pub/Sub
+wrong, and it fails only once something actually subscribes — which is late.
+
+### This is fan-out, not a queue
+
+Redis Pub/Sub delivers to whoever is listening **at the moment of
+publication** and to nobody else. Nothing is retained, retried or
+acknowledged, and a subscriber that is restarting misses whatever is sent
+meanwhile.
+
+Demonstrated rather than asserted: publishing with no subscriber and then
+subscribing receives **nothing**. That is Redis working as designed.
+
+It is the right shape for telling other instances what just happened. It is
+the **wrong** shape for work that has to happen — email retries, webhook
+deliveries, anything with an outcome somebody depends on. Those need a queue
+with acknowledgement, which this is not.
+
+### Channels are per tenant
+
+`axa-admin:<organizationId>:<event>`. Namespaced so this Redis can be shared
+with another service, and per tenant so a subscriber that cares about one
+organization does not receive and discard everybody else's.
+
+### A handler that throws does not silence the others
+
+Each is called in its own try/catch, and unsubscribing one listener leaves the
+rest on the channel — only the last one out leaves it.
+
+### Without `REDIS_URL` it is off, not broken
+
+Publishing is a no-op and subscribing returns a no-op unsubscribe. Development
+and CI do not need a Redis to run the API, and a wrong URL gives up after five
+retries rather than reconnecting for ever behind an invisible backoff.
+
+### What this does not do
+
+- **Nothing subscribes yet.** One publisher — a decided request — and no
+  listeners. The WebSocket gateway that would relay these to a browser is a
+  separate task.
+- **No persistence, no replay, no dead letter.** See above: not a queue.
+- **No authentication on the Redis**, which is fine for a container on a
+  private network and not fine on a shared one.
+- **No health check.** A Redis that is down shows up as warnings in the log
+  and nowhere else.
+
+## Decision emails
+
+When a request is decided the requester is emailed. Three templates:
+
+| Outcome | Subject |
+| --- | --- |
+| `approved` | *Your {app} request was approved* — with a button to the checkout |
+| `rejected` | *Your {app} request was declined* — with the reason |
+| `needs_more_info` | *More detail needed for your {app} request* — with what is needed |
+
+Teams hears that a decision happened; the requester is the one who has to act
+on it, so they get the email.
+
+### Both parts, every time
+
+Each message carries a plain-text body as well as HTML. Some people read mail
+as text, some clients refuse HTML, and a message with no text part is treated
+as likelier to be spam.
+
+### The note is escaped
+
+It is written by one person and read by another in a mail client, which makes
+it exactly the kind of text that must not carry markup. An approver who types
+`<b>` sees `<b>`; one who pastes `<img src=x onerror=…>` achieves nothing.
+Verified: the text part shows the tags literally, the HTML part shows
+`&lt;b&gt;`.
+
+### A mail server that is down cannot undo a decision
+
+Sending is fire-and-forget and swallows its own failures into the log — the
+same shape as the Teams notifications, and for the same reason: the decision
+is already recorded by the time the email is attempted. Measured: with nothing
+listening on the SMTP port, rejecting a request still answered **200 in
+116 ms**, the status was stored, and the failure appeared as a warning.
+
+**Without `SMTP_HOST` the emails are off, not broken.** Development and CI
+have no mail server.
+
+### What this does not do
+
+- **No retry and no queue.** A failed email is logged and gone.
+- **No `Reply-To`.** The requester cannot answer the message, which is the
+  obvious next thing: a rejection asking them to follow up gives them nowhere
+  to follow up to.
+- **No localisation.** English only, and the application name goes in raw.
+- **No templating engine and no branding** — inline styles, no logo, nothing
+  shared with the frontend's look.
+- **Nothing is recorded about the email.** Whether a requester was told is not
+  in the database, only in the log.
+
+## KPI dashboard
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/company/kpis?from=&to=` | The provisioning pipeline, computed |
+
+Nothing here is entered by hand and nothing is stored. Every number is derived
+from the requests themselves, which means **correcting a request corrects the
+numbers** — verified: changing a rejection to an approval moves the approval
+rate on the next read, with no job to re-run and no snapshot left disagreeing
+with the records it came from.
+
+### What it reports
+
+| Group | Contents |
+| --- | --- |
+| `requests` | Raised in the window, how many are still open, counts by status and by application |
+| `decisions` | Decided in the window, approved / rejected / sent back, the approval rate, and how long decisions took |
+| `payments` | Checkout links issued — and `paid`, which is **unavailable** |
+
+### `paid` is null, and says why
+
+```json
+"paid": {
+  "value": null,
+  "unavailable": "nothing confirms payment yet: Stripe reports a completed checkout over a webhook, and that endpoint does not exist"
+}
+```
+
+A dashboard showing **0 payments** is a lie; one showing "not measured" is
+true. The third stage of the pipeline cannot be computed until something
+receives Stripe's `checkout.session.completed`, and reporting a zero would
+quietly turn a missing integration into a business problem somebody would
+chase.
+
+### Decisions are counted by when they were made
+
+Not by when the request was raised. "How many did we decide last week" and "of
+last week's requests, how many are decided" are different questions, and a
+dashboard that silently answers the second is misleading.
+
+### A median and a p90, not a mean
+
+One request that sat over a holiday drags an average somewhere nobody
+experienced. Computed with `percentile_cont` in SQL, since percentiles are not
+something Prisma expresses; the tenant and the window are bound as parameters
+rather than interpolated.
+
+Checked against known values: decisions taking 1, 3, 9 and 40 hours report a
+median of **6** and a p90 of **30.7**.
+
+### An empty pipeline reports null, not zero
+
+`approvalRate` is null when nothing was settled — "we approved none of
+nothing" is not a 0% approval rate. Requests sent back for more information
+are kept out of the rate entirely: that is not a verdict.
+
+### What this does not do
+
+- **No trend, no comparison to a previous period, and no series** — one window,
+  one set of numbers. A chart needs buckets, which is a different query.
+- **No caching.** Every call recomputes. At this volume that is right, and it
+  is the first thing to measure if it stops being.
+- **Nothing from the Work module.** Issues closed, cycle time and report
+  coverage are all computable and none of them are the pipeline this task
+  names.
+- **No frontend.** The dashboard is an endpoint.
+
+## Account requests
+
+The provisioning pipeline: somebody asks for an account on an AXA application,
+somebody else decides, and an approval produces a payment link.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/requests` | Raise one |
+| `GET` | `/requests` | The queue, filterable by `status` and `app` |
+| `GET` | `/requests/:id` | One request |
+| `POST` | `/requests/:id/approve` | Approve, and create the checkout session |
+| `POST` | `/requests/:id/reject` | Refuse, with a reason |
+| `PATCH` | `/requests/:id` | Edit a still-open request — and re-submit it |
+| `DELETE` | `/requests/:id` | Withdraw it |
+| `GET` | `/requests/:id/transitions` | Where it can go from where it is |
+| `POST` | `/requests/:id/needs-more-info` | Send it back for detail |
+
+### Who may do what
+
+Anyone on the team may **raise** one (`requests:write`); everyone can **read**
+the queue (`requests:read`); deciding needs `requests:decide`, which a team
+leader has and a developer does not. Approving creates a payment link, which
+is not a developer's call.
+
+### The session is created before the approval is recorded
+
+This is the ordering that matters. The other way round leaves an **approved
+request with no way to pay** whenever Stripe is unreachable — which looks like
+a finished decision and is not one. A failed attempt leaves the request
+`pending`, so it can simply be approved again.
+
+Verified: with Stripe returning `500`, approving answers `502` and the request
+is **still pending**; retrying once Stripe is back approves it and sets the
+checkout URL.
+
+The request's own id is the Stripe idempotency key, so approving twice returns
+the first session rather than a second one somebody could also pay.
+
+### The state machine
+
+One table, in `request-transitions.ts`:
+
+| From | To |
+| --- | --- |
+| `pending` | approved, rejected, needs_more_info, withdrawn |
+| `needs_more_info` | **pending**, approved, rejected, withdrawn |
+| `approved` | — |
+| `rejected` | — |
+| `withdrawn` | — |
+
+Scattered conditions are how a state machine acquires a transition nobody
+meant to allow, and this one decides whether somebody gets charged.
+
+Approved and rejected are terminal on purpose: an approved request may already
+have been paid, and reversing that is a refund rather than a status change.
+
+### Editing a request re-submits it
+
+The raiser may edit while it is open, and only their own. Editing a
+`needs_more_info` request moves it back to `pending` — that is the whole point
+of the status. The approver's question is kept, so the requester can still see
+what was asked of them while their new answer sits in the note.
+
+The **application cannot be changed**: a request for a different product is a
+different request, and swapping it after an approver has looked would mean
+approving one thing and provisioning another.
+
+### Withdrawing marks, it does not delete
+
+`DELETE /requests/:id` sets `withdrawn` and answers with the record. A request
+is part of what the pipeline did, and a dashboard that counts requests must
+not have rows vanish from under it — "we withdrew four" and "four never
+happened" are different facts.
+
+Only the raiser may withdraw, including against an owner: taking back your own
+request is not an administrative act.
+
+### `needs_more_info` is a status, not a comment
+
+It is still open — but no longer waiting on the approver, which is the whole
+point. "How long does approval take" should count the time an approver
+actually held the request, and a comment cannot express that.
+
+### A decision cannot be taken twice
+
+Approved and rejected are final: a second decision is a `409`, because the
+first one may already have been paid. `needs_more_info` can be decided, since
+coming back is what it is for.
+
+### A rejection needs a reason
+
+`note` is required on reject and needs-more-info. Both become an email
+somebody has to act on, and "no" with nothing attached is not something anyone
+can act on.
+
+### What this does not do
+
+- **Nothing confirms payment.** `paidAt` exists and nothing ever sets it:
+  Stripe reports a completed checkout over a webhook, which is a separate
+  endpoint with its own signature verification. **The pipeline is therefore
+  two-thirds measurable** — raised and decided are real, paid is not.
+- **No email.** Decisions reach Teams, not the requester. The templates are
+  the next task.
+- **No request from outside.** Only a member of the tenant can raise one, so
+  the "gateway" is internal — a customer cannot ask for their own account.
+- **No audit beyond the last decision.** A request sent back twice keeps only
+  the latest note, and a re-submitted request keeps the timestamps of the
+  decision that sent it back — so the KPI dashboard counts that send-back under
+  the request's *current* status, which is `pending` again. Getting this right
+  needs an event log per request rather than columns on it.
+- **No reminders, no SLA, no escalation** on a request left pending.
+
+## Stripe checkout
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/billing/checkout-sessions` | Create a Stripe Checkout Session and return its URL |
+
+```json
+{ "app": "axacrm", "priceId": "price_1Pabc123",
+  "customerEmail": "client@example.com", "referenceId": "req-4821",
+  "mode": "subscription", "quantity": 1 }
+```
+```json
+{ "id": "cs_test_…", "url": "https://checkout.stripe.com/c/pay/cs_test_…",
+  "mode": "subscription", "expiresAt": "2026-10-09T20:24:13.000Z" }
+```
+
+### No card details ever reach this service
+
+Checkout is hosted by Stripe. This creates a session and hands back a URL; the
+customer enters their card on Stripe's page. Nothing in this codebase handles a
+card number, and nothing here is in scope for it.
+
+### The return URLs are configuration, not input
+
+`success_url` and `cancel_url` come from `STRIPE_SUCCESS_URL` and
+`STRIPE_CANCEL_URL`. Letting a caller choose them would make this an open
+redirect that **Stripe itself** walks the customer through, which is a far more
+convincing one than an ordinary redirect bug. The global validation whitelist
+rejects the fields outright.
+
+### Approving twice cannot charge twice
+
+The idempotency key is derived from the tenant and the `referenceId`, so a
+retried approval returns the *first* session rather than creating a second one
+somebody could also pay. `referenceId` also becomes the session's
+`client_reference_id`. Stripe keeps idempotency keys for 24 hours; after that
+the same reference would create a new session.
+
+`organizationId`, `app`, `referenceId` and the approver's id are written to the
+session's metadata, so whatever handles the payment webhook later can attribute
+it without guessing.
+
+### Unconfigured is an error, not silence
+
+Without `STRIPE_SECRET_KEY` the routes answer **503** and nothing reaches
+Stripe. This is deliberately the opposite of the Teams integration: a missed
+notification costs nothing, a checkout session nobody can get means somebody
+cannot pay.
+
+### What the caller is told, and what they are not
+
+| Situation | Answer |
+| --- | --- |
+| A price Stripe does not have | **400**, with Stripe's own message |
+| Stripe rejects our API key | **503** "Billing is not configured" — logged, never echoed |
+| Stripe rate limits us | **503** "try again" |
+| Stripe does not answer | **504** |
+| Anything else from Stripe | **502** |
+
+A bad price is the caller's problem. A rejected key is ours, and must not be
+reported as though the request were wrong. The secret key is never logged.
+
+One attempt waits 5 seconds and one retry is allowed, so **the longest a caller
+waits is about ten seconds**. Retrying is safe because every create carries an
+idempotency key.
+
+### It is not wired to an approval yet
+
+The task this was built for says *on approval*. `RequestsModule` is still an
+empty scaffold — there is no approvable entity — so the route takes a
+`referenceId` for whatever is being approved and `StripeService` is exported
+for direct use. When the Requests module lands, approving calls
+`createCheckoutSession` with the request's id and nothing here changes.
+
+### Still missing: the webhook
+
+**Nothing records that a payment succeeded.** Stripe reports that over a
+webhook, which is a separate endpoint with its own signature verification —
+and without it a session can be paid and this service will never know. Do not
+treat this as a finished billing flow.
 ## Issue keys
 
 Every issue carries a human-readable reference — `AXA-123` — alongside its

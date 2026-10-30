@@ -279,7 +279,11 @@ function TreeNode({
               onToggle(page.id);
             }}
             aria-label={open ? `Collapse ${page.title}` : `Expand ${page.title}`}
-            className="text-muted-foreground hover:text-foreground -ml-1 rounded p-0.5 transition-colors"
+            aria-expanded={open}
+            className={cn(
+              'text-muted-foreground hover:text-foreground shrink-0 rounded p-1',
+              FOCUS_RING,
+            )}
           >
             <ChevronRight
               className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')}
@@ -290,7 +294,18 @@ function TreeNode({
           <FileText className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
         )}
 
-        <span className="min-w-0 flex-1 truncate">{page.title}</span>
+        <button
+          type="button"
+          onClick={() => onSelect(page.id)}
+          aria-current={isSelected ? 'page' : undefined}
+          className={cn(
+            'min-w-0 flex-1 truncate rounded py-1.5 pr-2 text-left text-sm',
+            isSelected && 'font-medium',
+            FOCUS_RING,
+          )}
+        >
+          {page.title}
+        </button>
       </div>
 
       {open ? (
