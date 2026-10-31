@@ -1,11 +1,13 @@
 'use client';
 
 import * as React from 'react';
+import { cn } from 'cn';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useIssuesContext } from '@/components/work/issues-provider';
+import { FOCUS_RING } from '@/lib/focus';
 
 import {
   fetchIssuesClosedOn,
@@ -255,7 +257,7 @@ function ReportFields({ date, authorId }: { date: string; authorId: string }) {
                     type="checkbox"
                     checked={issueIds.includes(issue.id)}
                     onChange={() => toggleIssue(issue.id)}
-                    className="accent-primary size-3.5"
+                    className={cn('accent-primary size-3.5 rounded', FOCUS_RING)}
                   />
                   <span className="truncate">{issue.title}</span>
                 </label>

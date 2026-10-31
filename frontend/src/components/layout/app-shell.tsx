@@ -1,15 +1,14 @@
 'use client';
 
 import { Loader2, ShieldAlert } from 'lucide-react';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 import type { ReactNode } from 'react';
 
 import { AccessProvider, useAccess } from '@/components/providers/access-provider';
-import { Button } from '@/components/ui/button';
 import { IssuesProvider } from '@/components/work/issues-provider';
 import { AUTH_TOKEN_KEY } from '@/lib/api';
+import { FOCUS_RING } from '@/lib/focus';
 
 import { AppSidebar } from './app-sidebar';
 import { navItemFor } from './nav-items';
@@ -53,7 +52,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <AppSidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <TopBar />
-            <main className="flex-1 overflow-y-auto">
+            <a
+              href="#main"
+              className={`bg-background focus-visible:ring-ring sr-only rounded-md border px-3 py-2 text-sm font-medium focus-visible:not-sr-only focus-visible:absolute focus-visible:top-3 focus-visible:left-3 focus-visible:z-50 focus-visible:ring-2 ${FOCUS_RING}`}
+            >
+              Skip to content
+            </a>
+            <main id="main" tabIndex={-1} className="flex-1 overflow-y-auto">
               <AccessGate>{children}</AccessGate>
             </main>
           </div>
@@ -72,7 +77,7 @@ function AccessGate({ children }: { children: ReactNode }) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
         <Loader2 className="size-4 animate-spin" aria-hidden />
-        Chargement…
+        Chargement...
       </div>
     );
   }
@@ -101,15 +106,12 @@ function AccessDenied({ page }: { page: string }) {
         <ShieldAlert className="size-6" aria-hidden />
       </span>
       <div className="flex max-w-sm flex-col gap-1">
-        <h1 className="text-lg font-semibold tracking-tight">Accès refusé</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Acces refuse</h1>
         <p className="text-muted-foreground text-sm">
-          Ton rôle ne donne pas accès à la page « {page} ». Demande à ton manager ou au CEO si tu en
-          as besoin.
+          Ton role ne donne pas acces a la page &quot;{page}&quot;. Demande a ton manager ou au CEO
+          si tu en as besoin.
         </p>
       </div>
-      <Button asChild size="sm">
-        <Link href="/">Retour à mon espace</Link>
-      </Button>
     </div>
   );
 }

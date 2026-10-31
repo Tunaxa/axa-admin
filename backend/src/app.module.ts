@@ -38,6 +38,7 @@ import { WorkModule } from './work/work.module.js';
     DocsModule,
     GithubModule,
     RequestsModule,
+    OrgChartModule,
     CalendarModule,
     OrgChartModule,
     AppUsageModule,
