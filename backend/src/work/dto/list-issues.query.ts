@@ -30,4 +30,9 @@ export class ListIssuesQuery {
   @IsOptional()
   @IsISO8601()
   closedBefore?: string;
+
+  /** Narrow to one department. Honoured for the CEO only. */
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
 }

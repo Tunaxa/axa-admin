@@ -215,3 +215,62 @@
     }
   }
 }
+
+/* Login hero: slow cinematic motion for the fantasy backdrop. */
+@keyframes fx-kenburns {
+  0% {
+    transform: scale(1.05) translate3d(0, 0, 0);
+  }
+  100% {
+    transform: scale(1.18) translate3d(-2.5%, -3%, 0);
+  }
+}
+
+@keyframes fx-fog {
+  0% {
+    transform: translate3d(-8%, 0, 0);
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate3d(8%, 0, 0);
+    opacity: 0.35;
+  }
+}
+
+@keyframes fx-firefly {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.95;
+  }
+  50% {
+    transform: translate3d(var(--fx-dx), calc(var(--fx-dy) * 0.5), 0) scale(1);
+  }
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(calc(var(--fx-dx) * 0.4), var(--fx-dy), 0) scale(0.5);
+    opacity: 0;
+  }
+}
+
+.fx-kenburns {
+  animation: fx-kenburns 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.fx-fog {
+  animation: fx-fog 22s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+.fx-firefly {
+  animation: fx-firefly var(--fx-dur) ease-in-out var(--fx-delay) infinite;
+  will-change: transform, opacity;
+}

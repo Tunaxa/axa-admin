@@ -22,7 +22,7 @@ import { type PipelineKpis, KpisService } from './kpis.service.js';
 export class KpisController {
   constructor(private readonly kpis: KpisService) {}
 
-  @RequirePermissions('requests:read')
+  @RequirePermissions('executive:read')
   @Get('kpis')
   pipeline(
     @Req() request: AuthenticatedRequest,

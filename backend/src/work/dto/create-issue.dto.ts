@@ -41,4 +41,9 @@ export class CreateIssueDto {
   @IsOptional()
   @IsEnum(AppKey)
   app?: AppKey;
+
+  /// Only the CEO may choose; everybody else inherits their own department.
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
 }

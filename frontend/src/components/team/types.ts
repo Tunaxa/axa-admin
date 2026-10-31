@@ -52,6 +52,8 @@ export interface AppOwnership {
 export interface RosterMember {
   id: string;
   role: Role;
+  departmentId: string | null;
+  department: { id: string; name: string } | null;
   createdAt: string;
   user: { id: string; name: string; email: string };
   ownerships: AppOwnership[];

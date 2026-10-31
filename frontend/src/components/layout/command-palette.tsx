@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
 import {
@@ -11,6 +12,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
+import { useAccess } from '@/components/providers/access-provider';
 import { useIssuesContext } from '@/components/work/issues-provider';
 import { STATUS_LABELS } from '@/components/work/labels';
 
@@ -44,6 +46,8 @@ export function CommandPalette({
   onOpenChange: (open: boolean) => void;
 }) {
   const { issues, setOpenIssueId } = useIssuesContext();
+  const access = useAccess();
+  const router = useRouter();
   const [search, setSearch] = React.useState('');
 
   React.useEffect(() => {
@@ -99,11 +103,18 @@ export function CommandPalette({
           ) : null}
 
           <CommandGroup heading="Navigation">
-            {NAV_ITEMS.map((item) => {
+            {NAV_ITEMS.filter((item) => item.href && access.can(item.permission)).map((item) => {
               const Icon = item.icon;
 
               return (
-                <CommandItem key={item.key} value={item.label} onSelect={() => onOpenChange(false)}>
+                <CommandItem
+                  key={item.key}
+                  value={item.label}
+                  onSelect={() => {
+                    onOpenChange(false);
+                    if (item.href) router.push(item.href);
+                  }}
+                >
                   <Icon className="size-4" aria-hidden />
                   <span>{item.label}</span>
                 </CommandItem>

@@ -60,27 +60,35 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
-    const user = await this.prisma.user.findUnique({
-      where: {
-        organizationId_email: {
-          organizationId: dto.organizationId,
-          email: dto.email,
-        },
-      },
+    // The same address may exist in two tenants, so every account with it is
+    // tried and the one whose password matches signs in.
+    const candidates = await this.prisma.user.findMany({
+      where: { email: dto.email.trim().toLowerCase() },
     });
 
-    // Compare against a dummy hash when the user does not exist, so a missing
+    // Compare against a dummy hash when there is no account, so a missing
     // account and a wrong password take a similar amount of time to reject.
-    const passwordHash =
-      user?.passwordHash ??
+    const dummyHash =
       '$2b$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv';
-    const passwordMatches = await bcrypt.compare(dto.password, passwordHash);
 
-    if (!user || !passwordMatches) {
+    let matched: (typeof candidates)[number] | null = null;
+
+    for (const candidate of candidates.length > 0 ? candidates : [null]) {
+      const ok = await bcrypt.compare(
+        dto.password,
+        candidate?.passwordHash ?? dummyHash,
+      );
+
+      if (ok && candidate && !matched) {
+        matched = candidate;
+      }
+    }
+
+    if (!matched) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.buildResult(user);
+    return this.buildResult(matched);
   }
 
   private async buildResult(user: {

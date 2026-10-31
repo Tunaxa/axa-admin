@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma, Role } from '@prisma/client';
 
+import { PermissionsService } from '../auth/permissions.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ListDevProfilesQuery } from './dto/list-dev-profiles.query.js';
 import type { UpsertDevProfileDto } from './dto/upsert-dev-profile.dto.js';
@@ -46,13 +47,26 @@ export class DevProfilesService {
     },
   } as const;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   async list(
     organizationId: string,
+    actorId: string,
     query: ListDevProfilesQuery,
   ): Promise<DevProfileView[]> {
+    const scope = await this.permissions.scope(organizationId, actorId);
     const where: Prisma.DevProfileWhereInput = { organizationId };
+
+    if (!scope.seeAll) {
+      if (!scope.departmentId) {
+        return [];
+      }
+
+      where.teamMember = { is: { departmentId: scope.departmentId } };
+    }
 
     if (query.stack) {
       // `has` is a containment test against the array, which is what the GIN
@@ -71,10 +85,18 @@ export class DevProfilesService {
 
   async findOne(
     organizationId: string,
+    actorId: string,
     teamMemberId: string,
   ): Promise<DevProfileView> {
+    const scope = await this.permissions.scope(organizationId, actorId);
     const profile = await this.prisma.devProfile.findFirst({
-      where: { teamMemberId, organizationId },
+      where: {
+        teamMemberId,
+        organizationId,
+        ...(scope.seeAll
+          ? {}
+          : { teamMember: { is: { departmentId: scope.departmentId } } }),
+      },
       select: DevProfilesService.SELECT,
     });
 

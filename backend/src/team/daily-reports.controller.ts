@@ -40,7 +40,7 @@ export class DailyReportsController {
     @Req() request: AuthenticatedRequest,
     @Query() query: ListDailyReportsQuery,
   ): Promise<DailyReportView[]> {
-    return this.reports.list(request.user.org, query);
+    return this.reports.list(request.user.org, request.user.sub, query);
   }
 
   /**
@@ -66,7 +66,13 @@ export class DailyReportsController {
     @Req() request: AuthenticatedRequest,
     @Param('date') date: string,
   ): Promise<{ sent: boolean; reason?: string; reports: number }> {
-    const reports = await this.reports.list(request.user.org, { date });
+    const reports = await this.reports.list(
+      request.user.org,
+      request.user.sub,
+      {
+        date,
+      },
+    );
 
     const result = await this.teams.sendDailyDigest({
       date,

@@ -1,12 +1,18 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { IssueStatus } from '@prisma/client';
 import type { ActivityEvent, Issue, Prisma } from '@prisma/client';
 
+import {
+  type AccessScope,
+  PermissionsService,
+} from '../auth/permissions.service.js';
 import { TeamsService } from '../integrations/teams.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityService } from './activity.service.js';
 import { parseIssueKey, parseIssueKeys } from './issue-key.js';
@@ -27,20 +33,62 @@ export class IssuesService {
     private readonly prisma: PrismaService,
     private readonly activity: ActivityService,
     private readonly teams: TeamsService,
+    private readonly notifications: NotificationsService,
+    private readonly permissions: PermissionsService,
   ) {}
 
-  async create(organizationId: string, dto: CreateIssueDto): Promise<Issue> {
+  async create(
+    organizationId: string,
+    actorId: string,
+    dto: CreateIssueDto,
+  ): Promise<Issue> {
+    const scope = await this.permissions.scope(organizationId, actorId);
+
     await this.assertWorkspaceInTenant(organizationId, dto.workspaceId);
 
-    if (dto.assigneeId) {
-      await this.assertUserInTenant(organizationId, dto.assigneeId);
-    }
+    let projectDepartmentId: string | null = null;
 
     if (dto.projectId) {
-      await this.assertProjectInWorkspace(
+      const project = await this.assertProjectInWorkspace(
         organizationId,
         dto.workspaceId,
         dto.projectId,
+      );
+      projectDepartmentId = project.departmentId;
+    }
+
+    // Which department the work belongs to: the project's, else the CEO's
+    // explicit choice, else the creator's own.
+    const departmentId =
+      projectDepartmentId ??
+      (scope.seeAll ? (dto.departmentId ?? null) : scope.departmentId);
+
+    if (!scope.seeAll) {
+      if (!scope.departmentId) {
+        throw new ForbiddenException('You do not belong to any department');
+      }
+
+      if (departmentId !== scope.departmentId) {
+        throw new ForbiddenException('That project is outside your department');
+      }
+    }
+
+    // Somebody who is not a manager works on their own tasks: whatever they
+    // create is theirs.
+    const assigneeId =
+      dto.assigneeId ?? (scope.seeAll || scope.isManager ? undefined : actorId);
+
+    if (!scope.seeAll && !scope.isManager && assigneeId !== actorId) {
+      throw new ForbiddenException(
+        'Only a manager can assign a task to somebody else',
+      );
+    }
+
+    if (assigneeId) {
+      await this.assertAssigneeInDepartment(
+        organizationId,
+        assigneeId,
+        departmentId,
       );
     }
 
@@ -64,8 +112,9 @@ export class IssuesService {
           description: dto.description,
           status: dto.status,
           priority: dto.priority,
-          assigneeId: dto.assigneeId,
+          assigneeId,
           projectId: dto.projectId,
+          departmentId,
           app: dto.app,
           // An issue created straight into `done` was closed now.
           closedAt: dto.status === IssueStatus.done ? new Date() : null,
@@ -137,11 +186,34 @@ export class IssuesService {
     });
   }
 
-  async list(organizationId: string, query: ListIssuesQuery): Promise<Issue[]> {
+  async list(
+    organizationId: string,
+    actorId: string,
+    query: ListIssuesQuery,
+  ): Promise<Issue[]> {
+    const scope = await this.permissions.scope(organizationId, actorId);
     const where: Prisma.IssueWhereInput = { organizationId };
 
-    if (query.assigneeId) {
+    if (!scope.seeAll) {
+      // Nobody outside a department sees anything.
+      if (!scope.departmentId) {
+        return [];
+      }
+
+      where.departmentId = scope.departmentId;
+
+      // Members see their own tasks only; managers see the whole department.
+      if (!scope.isManager) {
+        where.assigneeId = actorId;
+      }
+    }
+
+    if (query.assigneeId && (scope.seeAll || scope.isManager)) {
       where.assigneeId = query.assigneeId;
+    }
+
+    if (query.departmentId && scope.seeAll) {
+      where.departmentId = query.departmentId;
     }
 
     if (query.app) {
@@ -166,24 +238,59 @@ export class IssuesService {
     });
   }
 
+  /** Keeps only the issues this person is allowed to see. */
+  async filterVisible(
+    organizationId: string,
+    actorId: string,
+    issues: Issue[],
+  ): Promise<Issue[]> {
+    const scope = await this.permissions.scope(organizationId, actorId);
+
+    return issues.filter((issue) => {
+      if (scope.seeAll) return true;
+
+      return (
+        scope.departmentId !== null &&
+        issue.departmentId === scope.departmentId &&
+        (scope.isManager || issue.assigneeId === actorId)
+      );
+    });
+  }
+
   async update(
     organizationId: string,
     actorId: string,
     id: string,
     dto: UpdateIssueDto,
   ): Promise<Issue> {
+    const scope = await this.permissions.scope(organizationId, actorId);
     const issue = await this.findInTenant(organizationId, id);
+    this.assertCanAccess(scope, issue, actorId);
 
     if (dto.assigneeId) {
-      await this.assertUserInTenant(organizationId, dto.assigneeId);
+      if (!scope.seeAll && !scope.isManager && dto.assigneeId !== actorId) {
+        throw new ForbiddenException(
+          'Only a manager can assign a task to somebody else',
+        );
+      }
+
+      await this.assertAssigneeInDepartment(
+        organizationId,
+        dto.assigneeId,
+        issue.departmentId,
+      );
     }
 
     if (dto.projectId) {
-      await this.assertProjectInWorkspace(
+      const project = await this.assertProjectInWorkspace(
         organizationId,
         issue.workspaceId,
         dto.projectId,
       );
+
+      if (issue.departmentId && project.departmentId !== issue.departmentId) {
+        throw new ForbiddenException('That project is outside the department');
+      }
     }
 
     var data: Prisma.IssueUncheckedUpdateInput = { ...dto };
@@ -250,6 +357,60 @@ export class IssuesService {
       dto.assigneeId !== issue.assigneeId
     ) {
       await this.announceAssignment(organizationId, actorId, updated);
+      // Tell the new assignee their inbox got something.
+      await this.notifications.push({
+        organizationId,
+        recipientId: dto.assigneeId,
+        actorId,
+        type: 'task_assigned',
+        title: `Nouvelle tâche assignée : ${updated.title}`,
+        body: updated.key,
+        link: `/?issue=${updated.id}`,
+      });
+    }
+
+    // Tell the assignee when their task's status moves — nothing worse than
+    // discovering by chance that a review was finished.
+    if (
+      dto.status !== undefined &&
+      dto.status !== issue.status &&
+      updated.assigneeId &&
+      updated.assigneeId !== actorId
+    ) {
+      await this.notifications.push({
+        organizationId,
+        recipientId: updated.assigneeId,
+        actorId,
+        type: 'task_status_changed',
+        title: `Statut mis à jour : ${updated.title}`,
+        body: `${issue.status} → ${updated.status}`,
+        link: `/?issue=${updated.id}`,
+      });
+    }
+
+    // Tell the department manager when one of their people moves a task, so
+    // progress reaches them without having to open the board.
+    if (
+      dto.status !== undefined &&
+      dto.status !== issue.status &&
+      updated.departmentId
+    ) {
+      const department = await this.prisma.department.findUnique({
+        where: { id: updated.departmentId },
+        select: { managerId: true },
+      });
+
+      if (department?.managerId && department.managerId !== actorId) {
+        await this.notifications.push({
+          organizationId,
+          recipientId: department.managerId,
+          actorId,
+          type: 'task_status_changed',
+          title: `Avancement : ${updated.title}`,
+          body: `${issue.status} -> ${updated.status}`,
+          link: `/?issue=${updated.id}`,
+        });
+      }
     }
 
     return updated;
@@ -307,7 +468,9 @@ export class IssuesService {
     id: string,
     body: string,
   ): Promise<ActivityEvent> {
+    const scope = await this.permissions.scope(organizationId, actorId);
     const issue = await this.findInTenant(organizationId, id);
+    this.assertCanAccess(scope, issue, actorId);
 
     return this.activity.record({
       organizationId,
@@ -322,15 +485,24 @@ export class IssuesService {
   /** The activity feed for one issue, newest first. */
   async activityFor(
     organizationId: string,
+    actorId: string,
     id: string,
   ): Promise<ActivityEvent[]> {
-    await this.findInTenant(organizationId, id);
+    const scope = await this.permissions.scope(organizationId, actorId);
+    const issue = await this.findInTenant(organizationId, id);
+    this.assertCanAccess(scope, issue, actorId);
 
     return this.activity.listForIssue(organizationId, id);
   }
 
-  async remove(organizationId: string, id: string): Promise<void> {
-    await this.findInTenant(organizationId, id);
+  async remove(
+    organizationId: string,
+    actorId: string,
+    id: string,
+  ): Promise<void> {
+    const scope = await this.permissions.scope(organizationId, actorId);
+    const issue = await this.findInTenant(organizationId, id);
+    this.assertCanAccess(scope, issue, actorId);
 
     await this.prisma.issue.delete({ where: { id } });
   }
@@ -388,11 +560,62 @@ export class IssuesService {
   ) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId, workspaceId },
-      select: { id: true },
+      select: { id: true, departmentId: true },
     });
 
     if (!project) {
       throw new BadRequestException('Project not found in this workspace');
+    }
+
+    return project;
+  }
+
+  /**
+   * Whether this person may touch an issue.
+   *
+   * The CEO may touch any; a manager, any in their department; anyone else
+   * only what is assigned to them. Reported as missing rather than forbidden,
+   * so the response does not confirm that an issue in another department
+   * exists.
+   */
+  private assertCanAccess(
+    scope: AccessScope,
+    issue: Issue,
+    actorId: string,
+  ): void {
+    if (scope.seeAll) return;
+
+    const sameDepartment =
+      scope.departmentId !== null && issue.departmentId === scope.departmentId;
+
+    if (sameDepartment && (scope.isManager || issue.assigneeId === actorId)) {
+      return;
+    }
+
+    throw new NotFoundException('Issue not found');
+  }
+
+  /** The assignee has to work in the department the issue belongs to. */
+  private async assertAssigneeInDepartment(
+    organizationId: string,
+    assigneeId: string,
+    departmentId: string | null,
+  ): Promise<void> {
+    const member = await this.prisma.teamMember.findFirst({
+      where: { organizationId, userId: assigneeId },
+      select: { role: true, departmentId: true },
+    });
+
+    if (!member) {
+      throw new BadRequestException('Assignee not found in this organization');
+    }
+
+    if (member.role === 'owner') return;
+
+    if (departmentId && member.departmentId !== departmentId) {
+      throw new BadRequestException(
+        'Assignee does not belong to the department of the issue',
+      );
     }
   }
 }

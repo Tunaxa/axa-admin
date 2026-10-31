@@ -3,10 +3,28 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
+
+export class CreateProjectDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  /** The CEO picks the department; a manager's is implied by their own. */
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+}
 
 export class UpdateProjectDto {
   @IsOptional()

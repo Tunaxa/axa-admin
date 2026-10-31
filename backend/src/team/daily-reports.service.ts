@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { PermissionsService } from '../auth/permissions.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ListDailyReportsQuery } from './dto/list-daily-reports.query.js';
 import type { SubmitDailyReportDto } from './dto/submit-daily-report.dto.js';
@@ -33,7 +34,10 @@ export class DailyReportsService {
     issues: { select: { issue: { select: { id: true, title: true } } } },
   } as const;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   /**
    * Stores the caller's report for one day.
@@ -86,15 +90,29 @@ export class DailyReportsService {
 
   async list(
     organizationId: string,
+    actorId: string,
     query: ListDailyReportsQuery,
   ): Promise<DailyReportView[]> {
+    const scope = await this.permissions.scope(organizationId, actorId);
     const where: Prisma.DailyReportWhereInput = { organizationId };
+
+    // The CEO reads every report, a manager their department's, anyone else
+    // only their own.
+    if (!scope.seeAll) {
+      if (scope.isManager && scope.departmentId) {
+        where.author = {
+          teamMember: { is: { departmentId: scope.departmentId } },
+        };
+      } else {
+        where.authorId = actorId;
+      }
+    }
 
     if (query.date) {
       where.reportDate = parseReportDate(query.date);
     }
 
-    if (query.authorId) {
+    if (query.authorId && (scope.seeAll || scope.isManager)) {
       where.authorId = query.authorId;
     }
 

@@ -1,38 +1,38 @@
-import { AppKey, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import {
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
 
+/** The roles an account can be created with from a request. */
+export const PROVISION_ROLES = ['developer', 'designer', 'viewer'] as const;
+
 /**
- * Approves a request by provisioning an internal user account for the
- * requester — not an external customer. The CEO fills these fields from the
- * UI; the service hashes the password and creates the roster rows atomically.
+ * Approves a request by creating an internal account for the requester.
+ *
+ * The CEO fills these in from the UI; the service hashes the password and
+ * creates the account and its place on a department's team in one transaction.
  */
 export class ProvisionRequestDto {
-  /** Plain password. Hashed by the service before it hits the database. */
+  /** Plain password; hashed by the service. */
   @IsString()
   @MinLength(12)
   @MaxLength(128)
   password!: string;
 
-  /** The person's base role across the organization. */
   @IsEnum(Role)
+  @IsIn(PROVISION_ROLES)
   role!: Role;
 
-  /**
-   * The team (= AXA app) the person leads or contributes to.
-   *
-   * Optional: when omitted the service falls back to the app on the request
-   * so the "team" field in the UI can be left alone when it already matches.
-   */
-  @IsOptional()
-  @IsEnum(AppKey)
-  team?: AppKey;
+  /** The department the new person joins. */
+  @IsUUID()
+  departmentId!: string;
 
   /** Note stored on the request after the decision. */
   @IsOptional()
@@ -40,9 +40,7 @@ export class ProvisionRequestDto {
   @MaxLength(2000)
   decisionNote?: string;
 
-  /**
-   * Optional display name override. Defaults to the request's `requesterName`.
-   */
+  /** Display name override. Defaults to the request's `requesterName`. */
   @IsOptional()
   @IsString()
   @IsNotEmpty()

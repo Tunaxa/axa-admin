@@ -37,7 +37,7 @@ export class IssuesController {
     @Req() request: AuthenticatedRequest,
     @Body() dto: CreateIssueDto,
   ): Promise<Issue> {
-    return this.issues.create(request.user.org, dto);
+    return this.issues.create(request.user.org, request.user.sub, dto);
   }
 
   /**
@@ -54,11 +54,15 @@ export class IssuesController {
     @Req() request: AuthenticatedRequest,
     @Query() query: ResolveIssuesQuery,
   ): Promise<Issue[]> {
-    return query.key
+    const found = query.key
       ? this.issues
           .findByKey(request.user.org, query.key)
           .then((issue) => [issue])
       : this.issues.findByText(request.user.org, query.text ?? '');
+
+    return found.then((issues) =>
+      this.issues.filterVisible(request.user.org, request.user.sub, issues),
+    );
   }
 
   @RequirePermissions('work:read')
@@ -67,7 +71,7 @@ export class IssuesController {
     @Req() request: AuthenticatedRequest,
     @Query() query: ListIssuesQuery,
   ): Promise<Issue[]> {
-    return this.issues.list(request.user.org, query);
+    return this.issues.list(request.user.org, request.user.sub, query);
   }
 
   @RequirePermissions('work:write')
@@ -87,7 +91,7 @@ export class IssuesController {
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ActivityEvent[]> {
-    return this.issues.activityFor(request.user.org, id);
+    return this.issues.activityFor(request.user.org, request.user.sub, id);
   }
 
   @RequirePermissions('work:write')
@@ -112,6 +116,6 @@ export class IssuesController {
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
-    return this.issues.remove(request.user.org, id);
+    return this.issues.remove(request.user.org, request.user.sub, id);
   }
 }

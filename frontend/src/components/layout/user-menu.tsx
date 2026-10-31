@@ -1,10 +1,9 @@
 'use client';
 
-import { Keyboard, LogOut, Settings, User as UserIcon } from 'lucide-react';
+import { Keyboard, LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import * as React from 'react';
-import { cn } from 'cn';
 
+import { ROLE_LABEL, useAccess } from '@/components/providers/access-provider';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,91 +13,71 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { apiFetch, AUTH_TOKEN_KEY } from '@/lib/api';
-
-interface Me {
-  sub: string;
-  org: string;
-  email: string;
-}
+import { AUTH_TOKEN_KEY } from '@/lib/api';
 
 function initialsOf(email: string | null): string {
   if (!email) return 'A';
+
   const local = email.split('@')[0] ?? '';
-  const parts = local.split(/[._-]+/).filter(Boolean);
-  const letters = parts
-    .map((p) => p[0] ?? '')
+  const letters = local
+    .split(/[._-]+/)
     .filter(Boolean)
+    .map((part) => part[0] ?? '')
     .slice(0, 2)
     .join('');
+
   return (letters || local.slice(0, 2) || 'A').toUpperCase();
 }
 
 export function UserMenu({ onOpenShortcuts }: { onOpenShortcuts: () => void }) {
   const router = useRouter();
-  const [me, setMe] = React.useState<Me | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    void apiFetch<Me>('/auth/me')
-      .then((data) => {
-        if (!cancelled) setMe(data);
-      })
-      .catch(() => {
-        if (!cancelled) setMe(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const access = useAccess();
 
   function signOut() {
     try {
       window.localStorage.removeItem(AUTH_TOKEN_KEY);
     } catch {
-      // ignore
+      // storage blocked
     }
+
     router.push('/login');
     router.refresh();
   }
 
-  const initials = initialsOf(me?.email ?? null);
+  const email = access.me?.email ?? null;
+  const roleLabel = access.role ? ROLE_LABEL[access.role] : null;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Account menu"
-          className={cn(
-            'relative p-0 ring-1 ring-transparent transition-shadow hover:ring-border focus-visible:ring-ring',
-          )}
-        >
+        <Button variant="ghost" size="icon" aria-label="Account menu" className="p-0">
           <span className="bg-primary/10 text-primary grid size-8 place-items-center rounded-full text-[11px] font-semibold">
-            {initials}
+            {initialsOf(email)}
           </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-60">
+      <DropdownMenuContent align="end" className="min-w-64">
         <div className="px-2.5 py-2">
           <div className="text-foreground truncate text-sm font-medium">
-            {me?.email ?? 'Signed out'}
+            {email ?? 'Signed out'}
           </div>
-          <div className="text-muted-foreground mt-0.5 truncate text-xs">
-            {me ? `Tenant ${me.org.slice(0, 8)}…` : 'No active session'}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {roleLabel ? (
+              <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                {roleLabel}
+              </span>
+            ) : null}
+            <span className="text-muted-foreground truncate text-xs">
+              {access.department
+                ? access.department.name
+                : access.isCeo
+                  ? 'Tous les départements'
+                  : 'Aucun département'}
+            </span>
           </div>
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Account</DropdownMenuLabel>
-        <DropdownMenuItem disabled>
-          <UserIcon className="size-4" />
-          Profile
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled>
-          <Settings className="size-4" />
-          Preferences
-        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onOpenShortcuts}>
           <Keyboard className="size-4" />
           Keyboard shortcuts

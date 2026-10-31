@@ -25,20 +25,22 @@ export const PERMISSIONS = [
   'calendar:read',
   'calendar:write',
   'calendar:delete',
-  'orgchart:read',
-  'orgchart:write',
-  'orgchart:delete',
   'requests:read',
   'requests:write',
   'requests:decide',
   'billing:manage',
+  'departments:read',
+  'departments:manage',
+  'projects:manage',
+  'executive:read',
+  'productivity:read',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
 
 const EVERY_PERMISSION = [...PERMISSIONS];
 
-/** Read everything, change nothing. */
+/** Read what belongs to their own department, change nothing. */
 const VIEWER: Permission[] = [
   'work:read',
   'docs:read',
@@ -46,53 +48,58 @@ const VIEWER: Permission[] = [
   'reports:read',
   'orgchart:read',
   'calendar:read',
-  'orgchart:read',
+  'departments:read',
   'requests:read',
 ];
 
 /** Do the work, without reshaping the organisation or destroying its record. */
-const CONTRIBUTOR: Permission[] = [
+const MEMBER: Permission[] = [
   ...VIEWER,
   'work:write',
   'docs:write',
   'reports:write',
   'orgchart:write',
   'calendar:write',
-  'orgchart:write',
-  // Anyone on the team may ask for an account to be provisioned; deciding on
-  // the request is a different matter, and so is paying for it.
   'requests:write',
+];
+
+/**
+ * The manager of a department.
+ *
+ * Runs one department: its projects, its people, its requests. Everything is
+ * scoped to that department by the services, not by this table — the table only
+ * says which kinds of action are open to the role.
+ */
+const MANAGER: Permission[] = [
+  ...MEMBER,
+  'work:delete',
+  'docs:delete',
+  'calendar:delete',
+  'orgchart:delete',
+  'team:manage',
+  'projects:manage',
+  'productivity:read',
+  'requests:decide',
 ];
 
 /**
  * What each role may do.
  *
- * Deleting is kept away from the roles that do the day's work. An issue or a
- * page removed by accident takes its history with it — the activity feed and
- * the daily reports that referenced it survive, but what it said does not —
- * so deletion sits with the people who are accountable for the record.
+ * - `owner` is the CEO: every permission, every department.
+ * - `dev_team_leader` and `pm_lead` are department managers.
+ * - `developer` and `designer` do the work in their department.
+ * - `viewer` reads their department.
+ *
+ * Deleting is kept away from the roles that do the day's work: an issue or a
+ * page removed by accident takes its history with it, so deletion sits with the
+ * people who are accountable for the record.
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.owner]: EVERY_PERMISSION,
   [Role.pm_lead]: EVERY_PERMISSION,
-  [Role.dev_team_leader]: [
-    ...CONTRIBUTOR,
-    'work:delete',
-    'docs:delete',
-    'orgchart:delete',
-    'calendar:delete',
-    'orgchart:delete',
-    // A team leader decides on requests from their team, but does not hold
-    // the company card: approving creates a payment link, it does not pay.
-    'requests:decide',
-    // Department-level manager: adds members to their own team, changes
-    // their role within it. The guard answers "could you do this anywhere";
-    // scoping to the leader's own app is a per-record rule the service
-    // layer would enforce when that becomes a concern.
-    'team:manage',
-  ],
-  [Role.developer]: CONTRIBUTOR,
-  [Role.designer]: CONTRIBUTOR,
+  [Role.dev_team_leader]: MANAGER,
+  [Role.developer]: MEMBER,
+  [Role.designer]: MEMBER,
   [Role.viewer]: VIEWER,
 };
 

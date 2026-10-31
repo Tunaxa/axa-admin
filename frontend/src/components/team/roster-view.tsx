@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { LayoutGrid, List, UserPlus } from 'lucide-react';
 import * as React from 'react';
 
+import { useAccess } from '@/components/providers/access-provider';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -15,7 +16,7 @@ import {
 } from '@/components/ui/table';
 
 import { InviteMemberDialog } from './invite-member-dialog';
-import { Avatar, OwnershipTags, RoleBadge } from './member-bits';
+import { Avatar, RoleBadge } from './member-bits';
 import { fetchRoster } from './roster-api';
 import type { RosterMember } from './types';
 
@@ -40,6 +41,7 @@ export function RosterView() {
   const [state, setState] = React.useState<LoadState>('loading');
   const [error, setError] = React.useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = React.useState(false);
+  const access = useAccess();
 
   const reload = React.useCallback(() => {
     fetchRoster()
@@ -114,20 +116,24 @@ export function RosterView() {
           {members.length === 1 ? 'member' : 'members'}
         </span>
 
-        <Button size="sm" className="ml-auto" onClick={() => setInviteOpen(true)}>
-          <UserPlus className="size-3.5" />
-          Ajouter un membre
-        </Button>
+        {access.can('team:manage') ? (
+          <Button size="sm" className="ml-auto" onClick={() => setInviteOpen(true)}>
+            <UserPlus className="size-3.5" />
+            Ajouter un membre
+          </Button>
+        ) : null}
       </div>
 
-      <InviteMemberDialog
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        onDone={() => {
-          setInviteOpen(false);
-          reload();
-        }}
-      />
+      {inviteOpen ? (
+        <InviteMemberDialog
+          open
+          onClose={() => setInviteOpen(false)}
+          onDone={() => {
+            setInviteOpen(false);
+            reload();
+          }}
+        />
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {members.length === 0 ? (
@@ -162,7 +168,7 @@ function MemberGrid({ members }: { members: RosterMember[] }) {
             <RoleBadge role={member.role} />
 
             <div className="mt-auto">
-              <OwnershipTags ownerships={member.ownerships} />
+              <DepartmentTag name={member.department?.name ?? null} />
             </div>
           </article>
         </li>
@@ -178,7 +184,7 @@ function MemberTable({ members }: { members: RosterMember[] }) {
         <TableRow>
           <TableHead>Member</TableHead>
           <TableHead className="w-44">Role</TableHead>
-          <TableHead>App ownership</TableHead>
+          <TableHead>Département</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -197,11 +203,23 @@ function MemberTable({ members }: { members: RosterMember[] }) {
               <RoleBadge role={member.role} />
             </TableCell>
             <TableCell>
-              <OwnershipTags ownerships={member.ownerships} />
+              <DepartmentTag name={member.department?.name ?? null} />
             </TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+function DepartmentTag({ name }: { name: string | null }) {
+  if (!name) {
+    return <span className="text-muted-foreground text-xs">Direction</span>;
+  }
+
+  return (
+    <span className="bg-muted text-foreground inline-flex rounded-full px-2 py-0.5 text-xs font-medium">
+      {name}
+    </span>
   );
 }
