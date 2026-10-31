@@ -63,9 +63,13 @@ async function main() {
   await prisma.$transaction([
     prisma.notification.deleteMany({ where: { organizationId: org.id } }),
     prisma.activityEvent.deleteMany({ where: { organizationId: org.id } }),
-    prisma.dailyReportIssue.deleteMany({}),
+    prisma.dailyReportIssue.deleteMany({
+      where: { report: { organizationId: org.id } },
+    }),
     prisma.dailyReport.deleteMany({ where: { organizationId: org.id } }),
-    prisma.issueLabel.deleteMany({}),
+    prisma.issueLabel.deleteMany({
+      where: { issue: { organizationId: org.id } },
+    }),
     prisma.issue.deleteMany({ where: { organizationId: org.id } }),
     prisma.label.deleteMany({ where: { organizationId: org.id } }),
     prisma.project.deleteMany({ where: { organizationId: org.id } }),
@@ -103,7 +107,7 @@ async function main() {
   console.log(`  Organization : ${org.name} (${org.slug}) id=${org.id}`);
   console.log(`  CEO user     : ${ceo.email} id=${ceo.id}`);
   console.log(`  Roster entry : ${member.id} (owner)`);
-  console.log(`  Password     : ${CEO_PASSWORD}`);
+  console.log('  Password     : configured via SEED_ADMIN_PASSWORD');
   console.log();
   console.log(
     'Sign in at http://localhost:3000/login with the credentials above.',
